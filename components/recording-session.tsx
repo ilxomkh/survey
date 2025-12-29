@@ -108,6 +108,29 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           console.warn("[RecordingSession] ⚠️ Небезопасное соединение. Android может блокировать геолокацию.")
         }
 
+        // Предварительная проверка доступности геолокации
+        console.log("[RecordingSession] Проверка доступности геолокации...")
+        await new Promise<void>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            (success) => {
+              console.log("[RecordingSession] ✅ Геолокация доступна:", success)
+              resolve()
+            },
+            (err) => {
+              alert("Геолокация запрещена. Разрешите доступ в настройках телефона")
+              console.error("[RecordingSession] ❌ Геолокация недоступна:", err)
+              setGeoStatus("✗ Геолокация запрещена")
+              setError("Геолокация запрещена. Разрешите доступ в настройках телефона")
+              reject(err)
+            },
+            {
+              enableHighAccuracy: true,
+              timeout: 15000,
+              maximumAge: 0,
+            }
+          )
+        })
+
         console.log("[RecordingSession] Запуск отслеживания геолокации...")
         
         // Fallback: сначала пробуем точную геолокацию, потом обычную

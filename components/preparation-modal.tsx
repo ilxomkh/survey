@@ -46,53 +46,21 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
 
       const position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
         console.log("[PreparationModal] Запрос геолокации...")
-        
-        // Timeout для Android (10 секунд)
-        const timeoutId = setTimeout(() => {
-          console.error("[PreparationModal] Timeout геолокации (10 сек)")
-          reject(new Error("Таймаут получения геолокации. Проверьте настройки GPS на устройстве."))
-        }, 10000)
 
         navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            clearTimeout(timeoutId)
-            console.log("[PreparationModal] ✅ Геолокация получена:", {
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              accuracy: pos.coords.accuracy,
-            })
-            resolve(pos.coords)
+          (success) => {
+            console.log("[PreparationModal] ✅ Геолокация получена:", success)
+            resolve(success.coords)
           },
           (err) => {
-            clearTimeout(timeoutId)
-            console.error("[PreparationModal] ❌ Ошибка геолокации:", {
-              code: err.code,
-              message: err.message,
-              PERMISSION_DENIED: err.PERMISSION_DENIED,
-              POSITION_UNAVAILABLE: err.POSITION_UNAVAILABLE,
-              TIMEOUT: err.TIMEOUT,
-            })
-            
-            let errorMessage = "Ошибка геолокации"
-            switch (err.code) {
-              case err.PERMISSION_DENIED:
-                errorMessage = "Доступ к геолокации запрещен. Разрешите доступ в настройках."
-                break
-              case err.POSITION_UNAVAILABLE:
-                errorMessage = "Геолокация недоступна. Включите GPS и проверьте настройки."
-                break
-              case err.TIMEOUT:
-                errorMessage = "Таймаут получения геолокации. Проверьте GPS на устройстве."
-                break
-              default:
-                errorMessage = `Ошибка геолокации: ${err.message}`
-            }
-            reject(new Error(errorMessage))
+            alert("Геолокация запрещена. Разрешите доступ в настройках телефона")
+            console.error("[PreparationModal] ❌ Ошибка геолокации:", err)
+            reject(new Error("Геолокация запрещена. Разрешите доступ в настройках телефона"))
           },
           {
-            enableHighAccuracy: true, // Попробуем сначала точную геолокацию
-            timeout: 10000, // 10 секунд таймаут (критично для Android)
-            maximumAge: 0, // Не использовать кеш
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0,
           }
         )
       })
