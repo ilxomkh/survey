@@ -23,6 +23,12 @@ class ApiClient {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`
+    console.log("[ApiClient] request: отправка запроса", {
+      method: options.method || "GET",
+      url,
+      endpoint,
+      fullUrl: url,
+    })
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Accept: "application/json",
@@ -141,15 +147,26 @@ class ApiClient {
     if (sessionId) {
       const params = new URLSearchParams({ session_id: sessionId })
       endpoint = `${endpoint}?${params.toString()}`
+      console.log("[ApiClient] getSurveys: session_id передан, endpoint:", endpoint)
+    } else {
+      console.log("[ApiClient] getSurveys: session_id не передан, endpoint:", endpoint)
     }
     return this.request(endpoint, { method: "GET" })
   }
 
   async startSession(surveyId: number, latitude: number, longitude: number, accuracy: number) {
-    return this.request("/api/sessions/start", {
+    console.log("[ApiClient] startSession: создание сессии", {
+      surveyId,
+      latitude,
+      longitude,
+      accuracy,
+    })
+    const result = await this.request("/api/sessions/start", {
       method: "POST",
       body: JSON.stringify({ survey_id: surveyId, latitude, longitude, accuracy }),
     })
+    console.log("[ApiClient] startSession: получен ответ от бекенда", result)
+    return result
   }
 
   async updateLocation(sessionId: string, latitude: number, longitude: number, accuracy: number) {
@@ -239,6 +256,16 @@ class ApiClient {
     params.append("limit", limit.toString())
 
     return this.request(`/api/supervisor/sessions?${params.toString()}`, { method: "GET" })
+  }
+
+  async getSurveyQuestions(surveyId: number, sessionId?: string) {
+    let endpoint = `/api/surveys/${surveyId}/questions`
+    if (sessionId) {
+      const params = new URLSearchParams({ session_id: sessionId })
+      endpoint = `${endpoint}?${params.toString()}`
+    }
+    console.log("[ApiClient] getSurveyQuestions: получение вопросов опроса", { surveyId, sessionId, endpoint })
+    return this.request(endpoint, { method: "GET" })
   }
 }
 

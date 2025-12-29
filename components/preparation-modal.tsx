@@ -33,10 +33,67 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
     setLoading(true)
 
     try {
+      // Проверяем поддержку геолокации
+      if (!navigator.geolocation) {
+        throw new Error("Геолокация не поддерживается вашим браузером")
+      }
+
+      // Проверяем HTTPS (критично для Android)
+      const isSecure = window.location.protocol === "https:" || window.location.hostname === "localhost"
+      if (!isSecure) {
+        console.warn("[PreparationModal] ⚠️ Небезопасное соединение. Android может блокировать геолокацию.")
+      }
+
       const position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
+        console.log("[PreparationModal] Запрос геолокации...")
+        
+        // Timeout для Android (10 секунд)
+        const timeoutId = setTimeout(() => {
+          console.error("[PreparationModal] Timeout геолокации (10 сек)")
+          reject(new Error("Таймаут получения геолокации. Проверьте настройки GPS на устройстве."))
+        }, 10000)
+
         navigator.geolocation.getCurrentPosition(
-          (pos) => resolve(pos.coords),
-          (err) => reject(new Error(`Ошибка геолокации: ${err.message}`)),
+          (pos) => {
+            clearTimeout(timeoutId)
+            console.log("[PreparationModal] ✅ Геолокация получена:", {
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+            })
+            resolve(pos.coords)
+          },
+          (err) => {
+            clearTimeout(timeoutId)
+            console.error("[PreparationModal] ❌ Ошибка геолокации:", {
+              code: err.code,
+              message: err.message,
+              PERMISSION_DENIED: err.PERMISSION_DENIED,
+              POSITION_UNAVAILABLE: err.POSITION_UNAVAILABLE,
+              TIMEOUT: err.TIMEOUT,
+            })
+            
+            let errorMessage = "Ошибка геолокации"
+            switch (err.code) {
+              case err.PERMISSION_DENIED:
+                errorMessage = "Доступ к геолокации запрещен. Разрешите доступ в настройках."
+                break
+              case err.POSITION_UNAVAILABLE:
+                errorMessage = "Геолокация недоступна. Включите GPS и проверьте настройки."
+                break
+              case err.TIMEOUT:
+                errorMessage = "Таймаут получения геолокации. Проверьте GPS на устройстве."
+                break
+              default:
+                errorMessage = `Ошибка геолокации: ${err.message}`
+            }
+            reject(new Error(errorMessage))
+          },
+          {
+            enableHighAccuracy: true, // Попробуем сначала точную геолокацию
+            timeout: 10000, // 10 секунд таймаут (критично для Android)
+            maximumAge: 0, // Не использовать кеш
+          }
         )
       })
 
@@ -53,9 +110,11 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
       )
 
       const sessionId = data.session_id
+      console.log("[PreparationModal] Сессия создана, получен session_id:", sessionId)
       setSessionId(sessionId)
       // Сохраняем session_id в localStorage для использования в других запросах
       storage.setSessionId(sessionId)
+      console.log("[PreparationModal] session_id сохранен в localStorage:", sessionId)
       setShowRecording(true)
     } catch (err: any) {
       setError(err?.message || "Ошибка запуска сессии")

@@ -41,11 +41,30 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
         const sessionIdFromStorage = storage.getSessionId()
         const sessionId = sessionIdFromUrl || sessionIdFromStorage || undefined
 
+        console.log("[AgentDashboard] Получение session_id:", {
+          sessionIdFromUrl,
+          sessionIdFromStorage,
+          finalSessionId: sessionId,
+          currentUrl: window.location.href,
+        })
+        
+        // Проверяем все ключи в localStorage для отладки
+        if (typeof window !== "undefined") {
+          console.log("[AgentDashboard] Все ключи в localStorage:", Object.keys(localStorage))
+          console.log("[AgentDashboard] Значение current_session_id:", localStorage.getItem("current_session_id"))
+        }
+        
+        if (!sessionId) {
+          console.warn("[AgentDashboard] ⚠️ session_id не найден! Он появится после создания сессии.")
+        }
+
         // Если session_id есть в URL, сохраняем его в localStorage
         if (sessionIdFromUrl) {
           storage.setSessionId(sessionIdFromUrl)
+          console.log("[AgentDashboard] session_id сохранен в localStorage:", sessionIdFromUrl)
         }
 
+        console.log("[AgentDashboard] Вызов apiClient.getSurveys с sessionId:", sessionId)
         const data = await apiClient.getSurveys(sessionId)
         setSurveys(Array.isArray(data) ? data : [])
       } catch (err: any) {
