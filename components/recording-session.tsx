@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, Pause as Pause2, Play, Square, Loader2, MapPin, Mic, CheckCircle2 } from "lucide-react"
 import { apiClient } from "@/lib/api-client"
-import { ScrollArea } from "@/components/ui/scroll-area"
 
 interface Survey {
   id: number
@@ -33,6 +32,27 @@ interface RecordingSessionProps {
   onComplete: () => void
 }
 
+// Функция для преобразования типов вопросов Tally в формат приложения
+function mapTallyTypeToQuestionType(tallyType: string): string {
+  const normalizedType = String(tallyType).toUpperCase()
+  const typeMap: Record<string, string> = {
+    TEXT: "text",
+    MULTIPLE_CHOICE: "multiple_choice",
+    MULTIPLECHOICE: "multiple_choice",
+    CHOICE: "multiple_choice",
+    YES_NO: "yes_no",
+    YESNO: "yes_no",
+    BOOLEAN: "yes_no",
+    text: "text",
+    multiple_choice: "multiple_choice",
+    multiplechoice: "multiple_choice",
+    yes_no: "yes_no",
+    yesno: "yes_no",
+    boolean: "yes_no",
+  }
+  return typeMap[normalizedType] || typeMap[tallyType] || "text"
+}
+
 export function RecordingSession({ sessionId, survey, onComplete }: RecordingSessionProps) {
   const [isRecording, setIsRecording] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
@@ -52,6 +72,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const locationIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const lastPositionRef = useRef<GeolocationCoordinates | null>(null)
 
   // Load survey questions
   useEffect(() => {
@@ -64,14 +85,152 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         console.log("[RecordingSession] Загрузка вопросов опроса для survey_id:", survey.id, "session_id:", sessionId)
         const surveyData = await apiClient.getSurveyQuestions(survey.id, sessionId)
-        console.log("[RecordingSession] Получены данные опроса:", surveyData)
+        console.log("[RecordingSession] Получены данные опроса (полный объект):", JSON.stringify(surveyData, null, 2))
 
-        if (surveyData && Array.isArray(surveyData.questions)) {
-          setQuestions(surveyData.questions)
-        } else if (Array.isArray(surveyData)) {
-          setQuestions(surveyData)
+        // Обработка разных форматов ответа API
+        let extractedQuestions: Question[] = []
+        
+        if (surveyData) {
+          // Формат 1: { questions: Question[] }
+          if (Array.isArray(surveyData.questions)) {
+            console.log("[RecordingSession] Формат 1: найден массив questions")
+            extractedQuestions = surveyData.questions
+          }
+          // Формат 2: { blocks: Block[] } - формат Tally
+          else if (Array.isArray(surveyData.blocks)) {
+            console.log("[RecordingSession] Формат 2: найден массив blocks, количество:", surveyData.blocks.length)
+            
+            // Функция для извлечения текста из safeHTMLSchema
+            const extractTextFromSchema = (schema: any): string => {
+              if (!schema || !Array.isArray(schema)) return ""
+              return schema
+                .map((item: any) => {
+                  if (typeof item === "string") return item
+                  if (Array.isArray(item) && item.length > 0 && typeof item[0] === "string") {
+                    return item[0]
+                  }
+                  return ""
+                })
+                .filter(Boolean)
+                .join("")
+                .trim()
+            }
+            
+            // Находим все блоки с заголовками вопросов (TITLE с groupType QUESTION)
+            const questionTitleBlocks = surveyData.blocks.filter(
+              (block: any) => block.type === "TITLE" && block.groupType === "QUESTION"
+            )
+            
+            console.log("[RecordingSession] Найдено блоков с заголовками вопросов:", questionTitleBlocks.length)
+            
+            // Обрабатываем каждый вопрос
+            extractedQuestions = questionTitleBlocks.map((titleBlock: any, questionIndex: number) => {
+              // Извлекаем текст вопроса из payload.safeHTMLSchema или payload.title
+              const questionText = 
+                extractTextFromSchema(titleBlock.payload?.safeHTMLSchema) ||
+                titleBlock.payload?.title ||
+                titleBlock.text ||
+                ""
+              
+              console.log(`[RecordingSession] Вопрос ${questionIndex + 1}: "${questionText}"`)
+              
+              // Определяем тип вопроса по следующим блокам
+              // Ищем опции MULTIPLE_CHOICE_OPTION после этого заголовка
+              const titleBlockIndex = surveyData.blocks.indexOf(titleBlock)
+              const nextTitleBlockIndex = questionIndex < questionTitleBlocks.length - 1
+                ? surveyData.blocks.indexOf(questionTitleBlocks[questionIndex + 1])
+                : surveyData.blocks.length
+              
+              // Ищем опции между текущим заголовком и следующим
+              const optionBlocks = surveyData.blocks
+                .slice(titleBlockIndex + 1, nextTitleBlockIndex)
+                .filter((block: any) => 
+                  block.type === "MULTIPLE_CHOICE_OPTION" || 
+                  block.groupType === "MULTIPLE_CHOICE"
+                )
+              
+              console.log(`[RecordingSession] Вопрос ${questionIndex + 1} - найдено опций:`, optionBlocks.length)
+              
+              // Определяем тип вопроса
+              let questionType = "text"
+              if (optionBlocks.length > 0) {
+                questionType = "multiple_choice"
+              } else {
+                // Проверяем groupType заголовка или следующих блоков
+                const nextBlock = surveyData.blocks[titleBlockIndex + 1]
+                if (nextBlock?.groupType === "MULTIPLE_CHOICE") {
+                  questionType = "multiple_choice"
+                } else if (nextBlock?.groupType === "YES_NO") {
+                  questionType = "yes_no"
+                }
+              }
+              
+              // Извлекаем опции
+              const options: string[] = []
+              if (questionType === "multiple_choice" && optionBlocks.length > 0) {
+                optionBlocks.forEach((optionBlock: any) => {
+                  const optionText = 
+                    optionBlock.payload?.text ||
+                    optionBlock.text ||
+                    extractTextFromSchema(optionBlock.payload?.safeHTMLSchema) ||
+                    ""
+                  if (optionText) {
+                    options.push(optionText)
+                  }
+                })
+                console.log(`[RecordingSession] Вопрос ${questionIndex + 1} - опции:`, options)
+              }
+              
+              // Проверяем обязательность вопроса
+              const isRequired = 
+                optionBlocks.some((block: any) => block.payload?.isRequired === true) ||
+                titleBlock.payload?.isRequired === true ||
+                false
+              
+              const question: Question = {
+                id: titleBlock.uuid || `question_${questionIndex}`,
+                title: questionText,
+                type: questionType,
+                required: isRequired,
+              }
+              
+              if (options.length > 0) {
+                question.options = options
+              }
+              
+              console.log(`[RecordingSession] Сформированный вопрос ${questionIndex + 1}:`, question)
+              return question
+            }).filter((q: Question) => q.title && q.title.trim().length > 0)
+          }
+          // Формат 3: массив вопросов напрямую
+          else if (Array.isArray(surveyData)) {
+            console.log("[RecordingSession] Формат 3: ответ - массив напрямую")
+            extractedQuestions = surveyData
+          }
+          // Формат 4: возможно, данные в другом поле
+          else {
+            console.log("[RecordingSession] Формат 4: проверка других полей...")
+            // Пробуем найти данные в других возможных полях
+            const possibleFields = ['data', 'items', 'results', 'content']
+            for (const field of possibleFields) {
+              if (surveyData[field] && Array.isArray(surveyData[field])) {
+                console.log(`[RecordingSession] Найдены данные в поле ${field}`)
+                extractedQuestions = surveyData[field]
+                break
+              }
+            }
+          }
+        }
+        
+        console.log("[RecordingSession] Итоговые извлеченные вопросы:", extractedQuestions)
+        console.log("[RecordingSession] Количество вопросов:", extractedQuestions.length)
+        setQuestions(extractedQuestions)
+        
+        if (extractedQuestions.length === 0) {
+          console.error("[RecordingSession] ❌ Не удалось извлечь вопросы из ответа!")
+          console.error("[RecordingSession] Структура ответа:", JSON.stringify(surveyData, null, 2))
         } else {
-          console.warn("[RecordingSession] Неожиданный формат данных опроса:", surveyData)
+          console.log("[RecordingSession] ✅ Успешно извлечено вопросов:", extractedQuestions.length)
         }
       } catch (err) {
         console.error("[RecordingSession] Ошибка загрузки вопросов:", err)
@@ -145,6 +304,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           watchId = navigator.geolocation.watchPosition(
             async (position) => {
               const accuracy = position.coords.accuracy
+              // Сохраняем последнюю позицию для использования при завершении
+              lastPositionRef.current = position.coords
               setGeoStatus(`✓ Локация получена (${accuracy.toFixed(0)}м)`)
               console.log("[RecordingSession] ✅ Геолокация обновлена:", {
                 latitude: position.coords.latitude,
@@ -230,18 +391,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         mediaRecorder.ondataavailable = async (event) => {
           if (event.data.size > 0) {
+            // Сохраняем чанк для финальной отправки
             audioChunksRef.current.push(event.data)
 
-            // Upload chunk every 10 seconds
-            if (audioChunksRef.current.length > 0) {
-              const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" })
-
+            // Отправляем каждый чанк отдельно на бекенд
               try {
-                await apiClient.uploadAudio(sessionId, audioBlob)
-                audioChunksRef.current = []
+              console.log("[RecordingSession] Отправка аудио чанка, размер:", event.data.size, "байт")
+              await apiClient.uploadAudio(sessionId, event.data)
+              console.log("[RecordingSession] ✅ Аудио чанк успешно отправлен")
               } catch (err) {
-                console.error("Audio upload error:", err)
-              }
+              console.error("[RecordingSession] ❌ Ошибка отправки аудио чанка:", err)
+              // Не очищаем чанки при ошибке, чтобы можно было повторить отправку при завершении
             }
           }
         }
@@ -304,28 +464,68 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const finishRecording = async () => {
     setLoading(true)
 
+    try {
+      // Останавливаем запись и получаем последний чанк
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        // Запрашиваем последний чанк перед остановкой
+        if (mediaRecorderRef.current.state === "recording") {
+          mediaRecorderRef.current.requestData()
+        }
       mediaRecorderRef.current.stop()
       setIsRecording(false)
+        
+        // Ждем немного, чтобы последний чанк успел обработаться
+        await new Promise(resolve => setTimeout(resolve, 500))
     }
 
     if (timerRef.current) clearInterval(timerRef.current)
+
+      // Собираем и отправляем финальное аудио (если есть оставшиеся чанки)
+      if (audioChunksRef.current.length > 0) {
+        try {
+          console.log("[RecordingSession] Отправка финального аудио, чанков:", audioChunksRef.current.length)
+          const finalAudioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" })
+          console.log("[RecordingSession] Размер финального аудио:", finalAudioBlob.size, "байт")
+          await apiClient.uploadAudio(sessionId, finalAudioBlob)
+          console.log("[RecordingSession] ✅ Финальное аудио успешно отправлено")
+          audioChunksRef.current = []
+        } catch (err) {
+          console.error("[RecordingSession] ❌ Ошибка отправки финального аудио:", err)
+          // Не блокируем завершение, если аудио не отправилось
+        }
+      } else {
+        console.log("[RecordingSession] Нет оставшихся аудио чанков для отправки")
+      }
+
+      // Останавливаем поток микрофона
     streamRef.current?.getTracks().forEach((track) => track.stop())
 
-    try {
-      // Проверяем поддержку геолокации
+      // Получаем финальную геолокацию
+      let position: GeolocationCoordinates
+      
+      // Используем последнюю сохраненную позицию, если она есть
+      if (lastPositionRef.current) {
+        console.log("[RecordingSession] Использование последней известной геолокации:", {
+          latitude: lastPositionRef.current.latitude,
+          longitude: lastPositionRef.current.longitude,
+          accuracy: lastPositionRef.current.accuracy,
+        })
+        position = lastPositionRef.current
+      } else {
+        // Если последней позиции нет, пытаемся получить новую
+        console.log("[RecordingSession] Последней позиции нет, запрос новой геолокации...")
+        
       if (!navigator.geolocation) {
         throw new Error("Геолокация не поддерживается")
       }
 
-      const position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
-        console.log("[RecordingSession] Запрос финальной геолокации...")
-        
-        // Timeout для Android (8 секунд)
+        try {
+          position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
+            // Увеличиваем таймаут до 15 секунд и используем кеш до 30 секунд
         const timeoutId = setTimeout(() => {
           console.error("[RecordingSession] Timeout финальной геолокации")
           reject(new Error("Таймаут получения геолокации"))
-        }, 8000)
+            }, 15000)
 
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -343,19 +543,28 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             reject(err)
           },
           {
-            enableHighAccuracy: false, // Для финального запроса используем менее точную, но более быструю
-            timeout: 8000,
-            maximumAge: 10000, // Можно использовать кеш до 10 секунд
-          }
-        )
-      })
+                enableHighAccuracy: false,
+                timeout: 15000,
+                maximumAge: 30000, // Используем кеш до 30 секунд
+              }
+            )
+          })
+        } catch (err) {
+          // Если не удалось получить новую позицию, используем дефолтные значения
+          console.warn("[RecordingSession] ⚠️ Не удалось получить геолокацию, используем дефолтные значения")
+          throw new Error("Не удалось получить геолокацию для завершения сессии")
+        }
+      }
 
-      await apiClient.completeSession(sessionId, position.latitude, position.longitude, position.accuracy)
+      // Завершаем сессию с геолокацией и ответами
+      console.log("[RecordingSession] Завершение сессии с ответами:", answers)
+      await apiClient.completeSession(sessionId, position.latitude, position.longitude, position.accuracy, answers)
+      console.log("[RecordingSession] ✅ Сессия успешно завершена")
 
       onComplete()
     } catch (err: any) {
+      console.error("[RecordingSession] ❌ Ошибка завершения сессии:", err)
       setError(err?.message || "Ошибка завершения сессии")
-    } finally {
       setLoading(false)
     }
   }
@@ -385,6 +594,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex((prev) => prev + 1)
     }
+    // Ответы будут отправлены при завершении сессии
   }
 
   const handlePrevious = () => {
@@ -395,12 +605,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-background/95 flex items-center justify-center z-50">
-        <Card className="max-w-md w-full mx-4">
-          <CardContent className="pt-8 text-center space-y-4">
-            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-            <p className="font-semibold">Инициализация сессии...</p>
-            <div className="space-y-2 text-sm text-muted-foreground">
+      <div className="fixed inset-0 bg-background/95 flex items-center justify-center z-50 p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="pt-6 sm:pt-8 text-center space-y-3 sm:space-y-4 px-4 sm:px-6">
+            <Loader2 className="h-6 w-6 sm:h-8 sm:w-8 animate-spin text-primary mx-auto" />
+            <p className="font-semibold text-sm sm:text-base">Инициализация сессии...</p>
+            <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm text-muted-foreground">
               <p>{geoStatus}</p>
               <p>{micStatus}</p>
             </div>
@@ -411,53 +621,54 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }
 
   return (
-    <div className="fixed inset-0 bg-background/95 flex items-center justify-center z-50 p-4">
-      <div className="w-full max-w-4xl max-h-[90vh] flex flex-col gap-4">
+    <div className="fixed inset-0 bg-background/95 z-50 overflow-y-auto">
+      <div className="min-h-full flex items-start justify-center p-2 sm:p-4 py-4">
+        <div className="w-full max-w-7xl flex flex-col lg:flex-row gap-2 sm:gap-4">
         {/* Левая панель - вопросы опроса */}
-        <Card className="flex-1 flex flex-col min-h-0">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">{survey.title}</CardTitle>
+          <Card className="flex-1 flex flex-col min-h-0 lg:max-h-[90vh] shadow-lg overflow-hidden">
+          <CardHeader className="pb-2 sm:pb-4 border-b px-3 sm:px-6 flex-shrink-0">
+            <CardTitle className="text-base sm:text-xl font-semibold">{survey.title}</CardTitle>
             {questions.length > 0 && (
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 sm:mt-2">
                 Вопрос {currentQuestionIndex + 1} из {questions.length}
               </p>
             )}
           </CardHeader>
-          <CardContent className="flex-1 flex flex-col min-h-0">
+          <CardContent className="flex-1 flex flex-col min-h-0 overflow-hidden pt-3 sm:pt-6 px-3 sm:px-6">
             {loadingQuestions ? (
               <div className="flex items-center justify-center flex-1">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <span className="ml-2 text-sm text-muted-foreground">Загрузка вопросов...</span>
+                <Loader2 className="h-5 w-5 sm:h-6 sm:w-6 animate-spin text-primary" />
+                <span className="ml-2 text-xs sm:text-sm text-muted-foreground">Загрузка вопросов...</span>
               </div>
             ) : questions.length === 0 ? (
-              <div className="flex items-center justify-center flex-1 text-center">
+              <div className="flex items-center justify-center flex-1 text-center px-2">
                 <div>
-                  <p className="text-muted-foreground mb-2">Вопросы опроса не найдены</p>
+                  <p className="text-sm sm:text-base text-muted-foreground mb-2">Вопросы опроса не найдены</p>
                   <p className="text-xs text-muted-foreground">Продолжайте запись аудио</p>
                 </div>
               </div>
             ) : (
-              <ScrollArea className="flex-1">
-                <div className="space-y-4 pr-4">
+              <div className="flex-1 min-h-0 overflow-y-auto -mx-3 sm:-mx-6 px-3 sm:px-6">
+                <div className="space-y-4 sm:space-y-6 pb-4">
                   {currentQuestion && (
-                    <div className="space-y-4">
+                    <div className="space-y-4 sm:space-y-6">
                       <div>
-                        <h3 className="font-semibold text-base mb-2">
+                        <h3 className="font-semibold text-base sm:text-lg mb-2 sm:mb-3 leading-relaxed">
                           {currentQuestion.title}
                           {currentQuestion.required && <span className="text-red-500 ml-1">*</span>}
                         </h3>
-                        <p className="text-xs text-muted-foreground mb-4">
+                        <p className="text-xs text-muted-foreground mb-3 sm:mb-4">
                           Тип: {currentQuestion.type}
                         </p>
                       </div>
 
                       {/* Отображение вопроса в зависимости от типа */}
                       {currentQuestion.type === "multiple_choice" && currentQuestion.options && (
-                        <div className="space-y-2">
+                        <div className="space-y-2 sm:space-y-3">
                           {currentQuestion.options.map((option, idx) => (
                             <label
                               key={idx}
-                              className="flex items-center space-x-2 p-3 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                              className="flex items-center space-x-2 sm:space-x-3 p-3 sm:p-4 border-2 rounded-lg cursor-pointer hover:bg-muted/50 hover:border-primary/50 active:bg-muted/70 transition-all duration-200"
                             >
                               <input
                                 type="radio"
@@ -465,11 +676,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                                 value={option}
                                 checked={answers[currentQuestion.id] === option}
                                 onChange={() => handleAnswer(currentQuestion.id, option)}
-                                className="w-4 h-4"
+                                className="w-4 h-4 sm:w-5 sm:h-5 text-primary flex-shrink-0"
                               />
-                              <span className="flex-1">{option}</span>
+                              <span className="flex-1 text-sm sm:text-base break-words">{option}</span>
                               {answers[currentQuestion.id] === option && (
-                                <CheckCircle2 className="h-4 w-4 text-primary" />
+                                <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
                               )}
                             </label>
                           ))}
@@ -481,23 +692,23 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                           value={answers[currentQuestion.id] || ""}
                           onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
                           placeholder="Введите ваш ответ..."
-                          className="w-full min-h-[100px] p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                          className="w-full min-h-[100px] sm:min-h-[120px] p-3 sm:p-4 text-sm sm:text-base border-2 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
                         />
                       )}
 
                       {currentQuestion.type === "yes_no" && (
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 sm:gap-3">
                           <Button
                             variant={answers[currentQuestion.id] === "yes" ? "default" : "outline"}
                             onClick={() => handleAnswer(currentQuestion.id, "yes")}
-                            className="flex-1"
+                            className="flex-1 h-10 sm:h-12 text-sm sm:text-base"
                           >
                             Да
                           </Button>
                           <Button
                             variant={answers[currentQuestion.id] === "no" ? "default" : "outline"}
                             onClick={() => handleAnswer(currentQuestion.id, "no")}
-                            className="flex-1"
+                            className="flex-1 h-10 sm:h-12 text-sm sm:text-base"
                           >
                             Нет
                           </Button>
@@ -505,71 +716,90 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                       )}
 
                       {/* Навигация по вопросам */}
+                      <div className="flex gap-2 sm:gap-3 pt-4 sm:pt-6 border-t">
                       {questions.length > 1 && (
-                        <div className="flex gap-2 pt-4 border-t">
                           <Button
                             variant="outline"
                             onClick={handlePrevious}
                             disabled={currentQuestionIndex === 0}
-                            className="flex-1"
+                            className="flex-1 h-10 sm:h-11 text-sm sm:text-base"
                           >
                             Назад
                           </Button>
+                        )}
                           <Button
                             onClick={handleNext}
-                            disabled={!canGoNext || isLastQuestion}
-                            className="flex-1"
+                          disabled={!canGoNext}
+                          className={`${questions.length > 1 ? "flex-1" : "w-full"} h-10 sm:h-11 text-sm sm:text-base`}
                           >
                             {isLastQuestion ? "Последний вопрос" : "Далее"}
                           </Button>
                         </div>
-                      )}
                     </div>
                   )}
                 </div>
-              </ScrollArea>
+              </div>
             )}
           </CardContent>
         </Card>
 
         {/* Правая панель - управление записью */}
-        <Card className="w-full">
-          <CardContent className="pt-6 space-y-4">
+          <Card className="w-full lg:w-80 flex flex-col min-h-0 lg:max-h-[90vh] shadow-lg overflow-hidden lg:sticky lg:top-4">
+          <CardHeader className="pb-2 sm:pb-4 border-b px-3 sm:px-6 flex-shrink-0">
+            <CardTitle className="text-base sm:text-lg font-semibold">Управление записью</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col lg:overflow-y-auto pt-3 sm:pt-6 px-3 sm:px-6 space-y-4 sm:space-y-6">
             {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
+              <Alert variant="destructive" className="text-xs sm:text-sm">
+                <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4" />
+                <AlertDescription className="text-xs sm:text-sm">{error}</AlertDescription>
               </Alert>
             )}
 
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm p-2 bg-muted rounded">
-                <MapPin className="h-4 w-4 text-primary" />
-                <span>{geoStatus}</span>
+            {/* Статусы */}
+            <div className="space-y-2 sm:space-y-3">
+              <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm p-2 sm:p-3 bg-muted/50 rounded-lg border">
+                <MapPin className="h-4 w-4 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
+                <span className="text-xs sm:text-sm break-words">{geoStatus}</span>
               </div>
-              <div className="flex items-center gap-2 text-sm p-2 bg-muted rounded">
-                <Mic className="h-4 w-4 text-primary" />
-                <span>{micStatus}</span>
+              <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm p-2 sm:p-3 bg-muted/50 rounded-lg border">
+                <Mic className="h-4 w-4 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
+                <span className="text-xs sm:text-sm break-words">{micStatus}</span>
               </div>
             </div>
 
-            <div className="text-center space-y-2">
-              <div className="text-3xl font-bold font-mono text-primary">{formatTime(duration)}</div>
-              <p className="text-sm text-muted-foreground">Минимум: {Math.ceil(survey.min_duration_sec / 60)} мин</p>
-              {canFinish && <p className="text-sm text-green-600 font-semibold">✓ Можно завершить</p>}
+            {/* Таймер */}
+            <div className="text-center space-y-2 sm:space-y-3 py-3 sm:py-4 bg-gradient-to-br from-primary/5 to-primary/10 rounded-lg border-2 border-primary/20">
+              <div className="text-3xl sm:text-5xl font-bold font-mono text-primary tracking-wider">
+                {formatTime(duration)}
+              </div>
+              <p className="text-xs sm:text-sm text-muted-foreground font-medium">
+                Минимум: {Math.ceil(survey.min_duration_sec / 60)} мин
+              </p>
+              {canFinish && (
+                <p className="text-xs sm:text-sm text-green-600 font-semibold flex items-center justify-center gap-1">
+                  <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4" />
+                  Можно завершить
+                </p>
+              )}
             </div>
 
-            <div className="flex gap-2">
+            {/* Кнопки управления */}
+            <div className="flex flex-col gap-2 sm:gap-3 mt-auto">
               {isRecording && (
-                <Button variant="outline" size="sm" onClick={togglePause} className="flex-1 bg-transparent">
+                <Button 
+                  variant="outline" 
+                  onClick={togglePause} 
+                  className="w-full h-10 sm:h-11 text-sm sm:text-base border-2"
+                >
                   {isPaused ? (
                     <>
-                      <Play className="h-4 w-4 mr-2" />
+                      <Play className="h-3 w-3 sm:h-4 sm:w-4 mr-2" />
                       Продолжить
                     </>
                   ) : (
                     <>
-                      <Pause2 className="h-4 w-4 mr-2" />
+                      <Pause2 className="h-3 w-3 sm:h-4 sm:w-4 mr-2" />
                       Пауза
                     </>
                   )}
@@ -579,16 +809,16 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               <Button
                 onClick={finishRecording}
                 disabled={!canFinish || loading}
-                className="flex-1 bg-primary hover:bg-primary/90 gap-2"
+                className="w-full h-10 sm:h-11 text-sm sm:text-base bg-primary hover:bg-primary/90 gap-2 shadow-md"
               >
                 {loading ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
                     Завершение...
                   </>
                 ) : (
                   <>
-                    <Square className="h-4 w-4" />
+                    <Square className="h-3 w-3 sm:h-4 sm:w-4" />
                     Завершить
                   </>
                 )}
@@ -596,6 +826,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             </div>
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   )

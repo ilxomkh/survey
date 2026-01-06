@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://8a71c4b4c1fd.ngrok-free.app"
+const API_BASE_URL = "https://7d499a9395b6.ngrok-free.app"
 
 export interface ApiError {
   message: string
@@ -23,12 +23,25 @@ class ApiClient {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`
-    console.log("[ApiClient] request: отправка запроса", {
-      method: options.method || "GET",
+    const method = options.method || "GET"
+    
+    // Детальное логирование запроса
+    console.group(`[ApiClient] ${method} ${endpoint}`)
+    console.log("📤 Запрос:", {
+      method,
       url,
       endpoint,
       fullUrl: url,
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "ngrok-skip-browser-warning": "true",
+        ...(this.token ? { Authorization: `Bearer ${this.token.substring(0, 20)}...` } : {}),
+      },
+      body: options.body ? JSON.parse(options.body as string) : undefined,
     })
+    console.log("⏰ Время запроса:", new Date().toISOString())
+    
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Accept: "application/json",
@@ -41,10 +54,20 @@ class ApiClient {
     }
 
     try {
+      const requestStartTime = Date.now()
       const response = await fetch(url, {
         ...options,
         headers,
         mode: "cors",
+      })
+      const requestDuration = Date.now() - requestStartTime
+
+      // Логирование ответа
+      console.log("📥 Ответ получен:", {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        duration: `${requestDuration}ms`,
       })
 
       // Проверяем Content-Type перед парсингом
@@ -64,6 +87,7 @@ class ApiClient {
         if (isJson) {
           try {
             const errorData = await response.json()
+            console.error("❌ Ошибка ответа:", errorData)
             errorMessage = errorData.detail || errorData.message || errorMessage
           } catch {
             // Если не удалось распарсить JSON, используем дефолтное сообщение
@@ -71,12 +95,14 @@ class ApiClient {
         } else {
           // Если получили HTML вместо JSON, это может быть страница ошибки
           const text = await response.text()
+          console.error("❌ Получен не-JSON ответ:", text.substring(0, 500))
           if (text.includes("<!DOCTYPE") || text.includes("<html")) {
             errorMessage = `Сервер вернул HTML вместо JSON. Возможно, проблема с CORS или URL неправильный.`
           } else {
             errorMessage = text.substring(0, 200) || errorMessage
           }
         }
+        console.groupEnd()
         throw {
           message: errorMessage,
           status: response.status,
@@ -84,6 +110,8 @@ class ApiClient {
       }
 
       if (response.status === 204) {
+        console.log("✅ Успешный ответ (204 No Content)")
+        console.groupEnd()
         return undefined as T
       }
 
@@ -91,6 +119,8 @@ class ApiClient {
       if (!isJson) {
         const text = await response.text()
         if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+          console.error("❌ Получен HTML вместо JSON")
+          console.groupEnd()
           throw {
             message: `Сервер вернул HTML вместо JSON. Проверьте URL и настройки CORS.`,
             status: response.status,
@@ -98,8 +128,13 @@ class ApiClient {
         }
         // Пытаемся распарсить как JSON, даже если Content-Type не указан
         try {
-          return JSON.parse(text) as T
+          const parsed = JSON.parse(text) as T
+          console.log("✅ Успешный ответ (парсинг текста):", parsed)
+          console.groupEnd()
+          return parsed
         } catch {
+          console.error("❌ Не удалось распарсить ответ как JSON")
+          console.groupEnd()
           throw {
             message: `Ожидался JSON, но получен: ${text.substring(0, 100)}`,
             status: response.status,
@@ -107,10 +142,19 @@ class ApiClient {
         }
       }
 
-      return response.json()
+      const data = await response.json()
+      console.log("✅ Успешный ответ:", data)
+      console.log("📊 Размер ответа:", JSON.stringify(data).length, "байт")
+      console.groupEnd()
+      return data
     } catch (error) {
       if (error instanceof TypeError && error.message === "Failed to fetch") {
-        console.error("[v0] Network error - check if backend is running at", API_BASE_URL)
+        console.error("❌ Ошибка сети - не удается подключиться к серверу:", API_BASE_URL)
+        console.error("Проверьте:")
+        console.error("  - Запущен ли бекенд")
+        console.error("  - Правильный ли URL")
+        console.error("  - Настройки CORS")
+        console.groupEnd()
         throw {
           message: `Не удается подключиться к серверу. Убедитесь, что сервер запущен на ${API_BASE_URL}`,
           status: 0,
@@ -118,9 +162,13 @@ class ApiClient {
       }
       // Если это уже ApiError, пробрасываем дальше
       if (error && typeof error === "object" && "status" in error) {
+        console.error("❌ API ошибка:", error)
+        console.groupEnd()
         throw error
       }
       // Иначе оборачиваем в ApiError
+      console.error("❌ Неизвестная ошибка:", error)
+      console.groupEnd()
       throw {
         message: error instanceof Error ? error.message : "Неизвестная ошибка",
         status: 0,
@@ -243,10 +291,14 @@ class ApiClient {
     }
   }
 
-  async completeSession(sessionId: string, latitude: number, longitude: number, accuracy: number) {
+  async completeSession(sessionId: string, latitude: number, longitude: number, accuracy: number, answers?: Record<string, any>) {
+    const body: any = { latitude, longitude, accuracy }
+    if (answers && Object.keys(answers).length > 0) {
+      body.answers = answers
+    }
     return this.request(`/api/sessions/${sessionId}/complete`, {
       method: "POST",
-      body: JSON.stringify({ latitude, longitude, accuracy }),
+      body: JSON.stringify(body),
     })
   }
 
@@ -259,7 +311,7 @@ class ApiClient {
   }
 
   async getSurveyQuestions(surveyId: number, sessionId?: string) {
-    let endpoint = `/api/surveys/${surveyId}/questions`
+    let endpoint = `/webhooks/tally/surveys/${surveyId}/questions`
     if (sessionId) {
       const params = new URLSearchParams({ session_id: sessionId })
       endpoint = `${endpoint}?${params.toString()}`
@@ -267,6 +319,7 @@ class ApiClient {
     console.log("[ApiClient] getSurveyQuestions: получение вопросов опроса", { surveyId, sessionId, endpoint })
     return this.request(endpoint, { method: "GET" })
   }
+
 }
 
 export const apiClient = new ApiClient()
