@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://7d499a9395b6.ngrok-free.app"
+const API_BASE_URL = "https://3cfc29957585.ngrok-free.app"
 
 export interface ApiError {
   message: string
