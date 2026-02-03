@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://offline.prosurvey.uz/"
+const API_BASE_URL = "https://offline.prosurvey.uz"
 
 export interface ApiError {
   message: string
