@@ -12,7 +12,6 @@ interface Survey {
   id: number
   title: string
   description: string
-  min_duration_sec: number
   is_active: boolean
   language?: string
 }
@@ -106,12 +105,9 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
                     )}
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm text-muted-foreground">
-                      Минимум: <span className="font-semibold">{Math.ceil(survey.min_duration_sec / 60)} мин</span>
-                    </div>
-                    {survey.is_active && (
+                {survey.is_active && (
+                  <CardContent>
+                    <div className="flex justify-end">
                       <Button
                         size="sm"
                         className="bg-primary hover:bg-primary/90 gap-2"
@@ -120,9 +116,9 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
                         <Play className="h-4 w-4" />
                         Начать
                       </Button>
-                    )}
-                  </div>
-                </CardContent>
+                    </div>
+                  </CardContent>
+                )}
               </Card>
             ))}
           </div>

@@ -13,7 +13,6 @@ import { storage } from "@/lib/storage"
 interface Survey {
   id: number
   title: string
-  min_duration_sec: number
 }
 
 interface PreparationModalProps {
@@ -121,9 +120,6 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
                 <div className="space-y-1">
                   <p>✓ Опрос лицом к лицу</p>
                   <p>✓ Аудиозапись автоматически</p>
-                  <p>
-                    ✓ Минимум: <span className="font-semibold">{Math.ceil(survey.min_duration_sec / 60)} минут</span>
-                  </p>
                 </div>
               </AlertDescription>
             </Alert>

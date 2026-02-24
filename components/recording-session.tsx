@@ -4,13 +4,12 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Pause as Pause2, Play, Square, Loader2, MapPin, Mic, CheckCircle2 } from "lucide-react"
+import { AlertCircle, Square, Loader2, MapPin, Mic, CheckCircle2 } from "lucide-react"
 import { apiClient } from "@/lib/api-client"
 
 interface Survey {
   id: number
   title: string
-  min_duration_sec: number
 }
 
 interface Question {
@@ -55,13 +54,11 @@ function mapTallyTypeToQuestionType(tallyType: string): string {
 
 export function RecordingSession({ sessionId, survey, onComplete }: RecordingSessionProps) {
   const [isRecording, setIsRecording] = useState(false)
-  const [isPaused, setIsPaused] = useState(false)
   const [duration, setDuration] = useState(0)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
   const [geoStatus, setGeoStatus] = useState("Получение локации...")
   const [micStatus, setMicStatus] = useState("Запрос микрофона...")
-  const [canFinish, setCanFinish] = useState(false)
   const [questions, setQuestions] = useState<Question[]>([])
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<string, any>>({})
@@ -432,32 +429,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     }
   }, [loading])
 
-  // Check if minimum duration is met
-  useEffect(() => {
-    setCanFinish(duration >= survey.min_duration_sec)
-  }, [duration, survey.min_duration_sec])
-
   const startRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "inactive") {
       mediaRecorderRef.current.start(10000) // Upload every 10 seconds
       setIsRecording(true)
-      setIsPaused(false)
 
       timerRef.current = setInterval(() => {
         setDuration((prev) => prev + 1)
       }, 1000)
-    }
-  }
-
-  const togglePause = () => {
-    if (mediaRecorderRef.current) {
-      if (isPaused) {
-        mediaRecorderRef.current.resume()
-        setIsPaused(false)
-      } else {
-        mediaRecorderRef.current.pause()
-        setIsPaused(true)
-      }
     }
   }
 
@@ -773,42 +752,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               <div className="text-3xl sm:text-5xl font-bold font-mono text-primary tracking-wider">
                 {formatTime(duration)}
               </div>
-              <p className="text-xs sm:text-sm text-muted-foreground font-medium">
-                Минимум: {Math.ceil(survey.min_duration_sec / 60)} мин
-              </p>
-              {canFinish && (
-                <p className="text-xs sm:text-sm text-green-600 font-semibold flex items-center justify-center gap-1">
-                  <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4" />
-                  Можно завершить
-                </p>
-              )}
             </div>
 
             {/* Кнопки управления */}
             <div className="flex flex-col gap-2 sm:gap-3 mt-auto">
-              {isRecording && (
-                <Button 
-                  variant="outline" 
-                  onClick={togglePause} 
-                  className="w-full h-10 sm:h-11 text-sm sm:text-base border-2"
-                >
-                  {isPaused ? (
-                    <>
-                      <Play className="h-3 w-3 sm:h-4 sm:w-4 mr-2" />
-                      Продолжить
-                    </>
-                  ) : (
-                    <>
-                      <Pause2 className="h-3 w-3 sm:h-4 sm:w-4 mr-2" />
-                      Пауза
-                    </>
-                  )}
-                </Button>
-              )}
-
               <Button
                 onClick={finishRecording}
-                disabled={!canFinish || loading}
+                disabled={loading}
                 className="w-full h-10 sm:h-11 text-sm sm:text-base bg-primary hover:bg-primary/90 gap-2 shadow-md"
               >
                 {loading ? (
