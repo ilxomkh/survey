@@ -190,16 +190,10 @@ class ApiClient {
     })
   }
 
-  async getSurveys(sessionId?: string) {
-    let endpoint = "/api/agent/surveys"
-    if (sessionId) {
-      const params = new URLSearchParams({ session_id: sessionId })
-      endpoint = `${endpoint}?${params.toString()}`
-      console.log("[ApiClient] getSurveys: session_id передан, endpoint:", endpoint)
-    } else {
-      console.log("[ApiClient] getSurveys: session_id не передан, endpoint:", endpoint)
-    }
-    return this.request(endpoint, { method: "GET" })
+  async getSurveys() {
+    // Параметры session_id и lang не передаются: бэкенд их игнорирует
+    // и всегда возвращает все назначенные опросы (RU + UZ)
+    return this.request("/api/agent/surveys", { method: "GET" })
   }
 
   async startSession(surveyId: number, latitude: number, longitude: number, accuracy: number) {

@@ -7,7 +7,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, Play, LogOut, Loader2 } from "lucide-react"
 import { PreparationModal } from "./preparation-modal"
 import { apiClient } from "@/lib/api-client"
-import { storage } from "@/lib/storage"
 
 interface Survey {
   id: number
@@ -15,6 +14,7 @@ interface Survey {
   description: string
   min_duration_sec: number
   is_active: boolean
+  language?: string
 }
 
 interface AgentDashboardProps {
@@ -35,37 +35,8 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
           apiClient.setToken(token)
         }
 
-        // Получаем session_id из URL параметров или localStorage
-        const urlParams = new URLSearchParams(window.location.search)
-        const sessionIdFromUrl = urlParams.get("session_id")
-        const sessionIdFromStorage = storage.getSessionId()
-        const sessionId = sessionIdFromUrl || sessionIdFromStorage || undefined
-
-        console.log("[AgentDashboard] Получение session_id:", {
-          sessionIdFromUrl,
-          sessionIdFromStorage,
-          finalSessionId: sessionId,
-          currentUrl: window.location.href,
-        })
-        
-        // Проверяем все ключи в localStorage для отладки
-        if (typeof window !== "undefined") {
-          console.log("[AgentDashboard] Все ключи в localStorage:", Object.keys(localStorage))
-          console.log("[AgentDashboard] Значение current_session_id:", localStorage.getItem("current_session_id"))
-        }
-        
-        if (!sessionId) {
-          console.warn("[AgentDashboard] ⚠️ session_id не найден! Он появится после создания сессии.")
-        }
-
-        // Если session_id есть в URL, сохраняем его в localStorage
-        if (sessionIdFromUrl) {
-          storage.setSessionId(sessionIdFromUrl)
-          console.log("[AgentDashboard] session_id сохранен в localStorage:", sessionIdFromUrl)
-        }
-
-        console.log("[AgentDashboard] Вызов apiClient.getSurveys с sessionId:", sessionId)
-        const data = await apiClient.getSurveys(sessionId)
+        // Загружаем ВСЕ опросы без фильтрации по языку или session_id
+        const data = await apiClient.getSurveys()
         setSurveys(Array.isArray(data) ? data : [])
       } catch (err: any) {
         if (err?.status === 401) {
