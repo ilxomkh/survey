@@ -285,10 +285,17 @@ class ApiClient {
     }
   }
 
-  async completeSession(sessionId: string, latitude: number, longitude: number, accuracy: number, answers?: Record<string, any>) {
+  async completeSession(
+    sessionId: string,
+    latitude: number,
+    longitude: number,
+    accuracy: number,
+    surveyAnswers?: Array<{ key: string; question: string; type: string; value: any }>
+  ) {
     const body: any = { latitude, longitude, accuracy }
-    if (answers && Object.keys(answers).length > 0) {
-      body.answers = answers
+    if (surveyAnswers && surveyAnswers.length > 0) {
+      // Используем survey_answers — именно это поле ждёт бэкенд (schemas.py: SessionComplete)
+      body.survey_answers = surveyAnswers
     }
     return this.request(`/api/sessions/${sessionId}/complete`, {
       method: "POST",
@@ -302,6 +309,68 @@ class ApiClient {
     params.append("limit", limit.toString())
 
     return this.request(`/api/supervisor/sessions?${params.toString()}`, { method: "GET" })
+  }
+
+  async getAdminSessions(params?: {
+    status?: string
+    survey_id?: number
+    agent_id?: number
+    limit?: number
+    offset?: number
+  }) {
+    const p = new URLSearchParams()
+    if (params?.status) p.append("status", params.status)
+    if (params?.survey_id) p.append("survey_id", String(params.survey_id))
+    if (params?.agent_id) p.append("agent_id_filter", String(params.agent_id))
+    p.append("limit", String(params?.limit ?? 200))
+    p.append("offset", String(params?.offset ?? 0))
+    return this.request(`/api/admin/sessions-full?${p.toString()}`, { method: "GET" })
+  }
+
+  async getAdminAgents() {
+    return this.request("/api/admin/agents-list", { method: "GET" })
+  }
+
+  async toggleAgentStatus(agentId: string, isActive: boolean) {
+    return this.request(`/api/admin/agents/${agentId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: isActive }),
+    })
+  }
+
+  async getAdminSurveys() {
+    return this.request("/api/admin/surveys-full", { method: "GET" })
+  }
+
+  async getDashboardStats() {
+    return this.request("/api/admin/dashboard-stats", { method: "GET" })
+  }
+
+  getAudioUrl(sessionId: string): string {
+    const token = this.token
+    return `${API_BASE_URL}/api/admin/audio/${sessionId}?token=${token}`
+  }
+
+  async getCustomers() {
+    return this.request("/api/admin/customers", { method: "GET" })
+  }
+
+  async createCustomer(data: { name: string; contact_info?: string }) {
+    return this.request("/api/admin/customers", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateCustomer(id: number, data: { name?: string; contact_info?: string }) {
+    return this.request(`/api/admin/customers/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteCustomer(id: number) {
+    return this.request(`/api/admin/customers/${id}`, { method: "DELETE" })
   }
 
   async getSurveyQuestions(surveyId: number, sessionId?: string) {

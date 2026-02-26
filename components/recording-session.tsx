@@ -65,7 +65,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const [loadingQuestions, setLoadingQuestions] = useState(true)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
+  // Накапливаем промисы всех текущих загрузок чанков
+  const uploadPromisesRef = useRef<Promise<any>[]>([])
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const locationIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -386,20 +387,20 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         const mediaRecorder = new MediaRecorder(stream)
         mediaRecorderRef.current = mediaRecorder
 
-        mediaRecorder.ondataavailable = async (event) => {
+        mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
-            // Сохраняем чанк для финальной отправки
-            audioChunksRef.current.push(event.data)
-
-            // Отправляем каждый чанк отдельно на бекенд
+            // Каждый чанк загружается немедленно и независимо.
+            // Сохраняем промис, чтобы finishRecording мог дождаться завершения всех загрузок.
+            const uploadPromise = (async () => {
               try {
-              console.log("[RecordingSession] Отправка аудио чанка, размер:", event.data.size, "байт")
-              await apiClient.uploadAudio(sessionId, event.data)
-              console.log("[RecordingSession] ✅ Аудио чанк успешно отправлен")
+                console.log("[RecordingSession] Отправка аудио чанка, размер:", event.data.size, "байт")
+                await apiClient.uploadAudio(sessionId, event.data)
+                console.log("[RecordingSession] ✅ Аудио чанк успешно отправлен")
               } catch (err) {
-              console.error("[RecordingSession] ❌ Ошибка отправки аудио чанка:", err)
-              // Не очищаем чанки при ошибке, чтобы можно было повторить отправку при завершении
-            }
+                console.error("[RecordingSession] ❌ Ошибка отправки аудио чанка:", err)
+              }
+            })()
+            uploadPromisesRef.current.push(uploadPromise)
           }
         }
 
@@ -444,40 +445,30 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     setLoading(true)
 
     try {
-      // Останавливаем запись и получаем последний чанк
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-        // Запрашиваем последний чанк перед остановкой
-        if (mediaRecorderRef.current.state === "recording") {
-          mediaRecorderRef.current.requestData()
-        }
-      mediaRecorderRef.current.stop()
-      setIsRecording(false)
-        
-        // Ждем немного, чтобы последний чанк успел обработаться
-        await new Promise(resolve => setTimeout(resolve, 500))
-    }
+      if (timerRef.current) clearInterval(timerRef.current)
 
-    if (timerRef.current) clearInterval(timerRef.current)
-
-      // Собираем и отправляем финальное аудио (если есть оставшиеся чанки)
-      if (audioChunksRef.current.length > 0) {
-        try {
-          console.log("[RecordingSession] Отправка финального аудио, чанков:", audioChunksRef.current.length)
-          const finalAudioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" })
-          console.log("[RecordingSession] Размер финального аудио:", finalAudioBlob.size, "байт")
-          await apiClient.uploadAudio(sessionId, finalAudioBlob)
-          console.log("[RecordingSession] ✅ Финальное аудио успешно отправлено")
-          audioChunksRef.current = []
-        } catch (err) {
-          console.error("[RecordingSession] ❌ Ошибка отправки финального аудио:", err)
-          // Не блокируем завершение, если аудио не отправилось
-        }
-      } else {
-        console.log("[RecordingSession] Нет оставшихся аудио чанков для отправки")
+      // Останавливаем запись: сначала requestData() чтобы получить последний чанк,
+      // затем stop(). Оба вызова синхронно триггерят ondataavailable → промис попадает в uploadPromisesRef.
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        await new Promise<void>((resolve) => {
+          const recorder = mediaRecorderRef.current!
+          recorder.onstop = () => resolve()
+          if (recorder.state === "recording") {
+            recorder.requestData() // получаем последний незаконченный чанк
+          }
+          recorder.stop()
+        })
+        setIsRecording(false)
       }
 
+      // Ждём завершения ВСЕХ загрузок чанков (включая последний от requestData/stop)
+      console.log("[RecordingSession] Ожидание завершения всех загрузок чанков...")
+      await Promise.allSettled(uploadPromisesRef.current)
+      uploadPromisesRef.current = []
+      console.log("[RecordingSession] ✅ Все чанки загружены")
+
       // Останавливаем поток микрофона
-    streamRef.current?.getTracks().forEach((track) => track.stop())
+      streamRef.current?.getTracks().forEach((track) => track.stop())
 
       // Получаем финальную геолокацию
       let position: GeolocationCoordinates
@@ -535,9 +526,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         }
       }
 
-      // Завершаем сессию с геолокацией и ответами
-      console.log("[RecordingSession] Завершение сессии с ответами:", answers)
-      await apiClient.completeSession(sessionId, position.latitude, position.longitude, position.accuracy, answers)
+      // Формируем список ответов в формате, ожидаемом бэкендом: [{key, question, type, value}]
+      const surveyAnswersList = questions
+        .filter((q) => answers[q.id] !== undefined && answers[q.id] !== null && answers[q.id] !== "")
+        .map((q) => ({
+          key: q.id,
+          question: q.title,
+          type: q.type,
+          value: answers[q.id],
+        }))
+
+      console.log("[RecordingSession] Завершение сессии с ответами:", surveyAnswersList)
+      await apiClient.completeSession(sessionId, position.latitude, position.longitude, position.accuracy, surveyAnswersList)
       console.log("[RecordingSession] ✅ Сессия успешно завершена")
 
       onComplete()
