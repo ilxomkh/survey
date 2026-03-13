@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
+import { TelegramInit } from "@/components/telegram-init"
 import "./globals.css"
 
 const _geist = Geist({ subsets: ["latin"] })
@@ -26,7 +27,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
+      <head>
+        <script src="https://telegram.org/js/telegram-web-app.js" async />
+      </head>
       <body className={`font-sans antialiased bg-background text-foreground`}>
+        <TelegramInit />
         {children}
         <Analytics />
       </body>
