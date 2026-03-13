@@ -600,7 +600,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }
 
   return (
-    <div className="fixed inset-0 bg-background z-50 flex flex-col overflow-hidden">
+    <div
+      className="fixed inset-0 bg-background z-50 flex flex-col overflow-hidden"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) (document.activeElement as HTMLElement)?.blur()
+      }}
+    >
       <div className="flex-1 flex flex-col lg:flex-row gap-2 sm:gap-3 overflow-hidden p-2 sm:p-3">
         {/* Левая панель - вопросы опроса */}
           <Card className="flex-1 flex flex-col min-h-0 shadow-lg overflow-hidden">
@@ -626,7 +631,15 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 </div>
               </div>
             ) : (
-              <div className="flex-1 min-h-0 overflow-y-auto -mx-3 sm:-mx-6 px-3 sm:px-6">
+              <div
+                className="flex-1 min-h-0 overflow-y-auto -mx-3 sm:-mx-6 px-3 sm:px-6"
+                onClick={(e) => {
+                  const tag = (e.target as HTMLElement).tagName
+                  if (!["INPUT", "TEXTAREA", "BUTTON", "LABEL"].includes(tag)) {
+                    ;(document.activeElement as HTMLElement)?.blur()
+                  }
+                }}
+              >
                 <div className="space-y-4 sm:space-y-6 pb-4">
                   {currentQuestion && (
                     <div className="space-y-4 sm:space-y-6">
@@ -669,6 +682,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                         <textarea
                           value={answers[currentQuestion.id] || ""}
                           onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
+                          onFocus={(e) => {
+                            const el = e.currentTarget
+                            setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 350)
+                          }}
                           placeholder="Введите ваш ответ..."
                           className="w-full min-h-[100px] sm:min-h-[120px] p-3 sm:p-4 text-sm sm:text-base border-2 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
                         />
