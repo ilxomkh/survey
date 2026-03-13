@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Square, Loader2, MapPin, Mic, CheckCircle2 } from "lucide-react"
+import { AlertCircle, Square, Loader2, MapPin, CheckCircle2 } from "lucide-react"
 import { apiClient } from "@/lib/api-client"
 
 interface Survey {
@@ -600,11 +600,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }
 
   return (
-    <div className="fixed inset-0 bg-background/95 z-50 overflow-y-auto">
-      <div className="min-h-full flex items-start justify-center p-2 sm:p-4 py-4">
-        <div className="w-full max-w-7xl flex flex-col lg:flex-row gap-2 sm:gap-4">
+    <div className="fixed inset-0 bg-background z-50 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row gap-2 sm:gap-3 overflow-hidden p-2 sm:p-3">
         {/* Левая панель - вопросы опроса */}
-          <Card className="flex-1 flex flex-col min-h-0 lg:max-h-[90vh] shadow-lg overflow-hidden">
+          <Card className="flex-1 flex flex-col min-h-0 shadow-lg overflow-hidden">
           <CardHeader className="pb-2 sm:pb-4 border-b px-3 sm:px-6 flex-shrink-0">
             <CardTitle className="text-base sm:text-xl font-semibold">{survey.title}</CardTitle>
             {questions.length > 0 && (
@@ -722,10 +721,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           </CardContent>
         </Card>
 
-        {/* Правая панель - управление записью */}
-          <Card className="w-full lg:w-80 flex flex-col min-h-0 lg:max-h-[90vh] shadow-lg overflow-hidden lg:sticky lg:top-4">
-          <CardHeader className="pb-2 sm:pb-4 border-b px-3 sm:px-6 flex-shrink-0">
-            <CardTitle className="text-base sm:text-lg font-semibold">Управление записью</CardTitle>
+        {/* Правая панель - управление */}
+          <Card className="w-full lg:w-72 flex flex-col min-h-0 shadow-lg overflow-hidden">
+          <CardHeader className="pb-2 sm:pb-3 border-b px-3 sm:px-6 flex-shrink-0">
+            <CardTitle className="text-base sm:text-lg font-semibold">Статус</CardTitle>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col lg:overflow-y-auto pt-3 sm:pt-6 px-3 sm:px-6 space-y-4 sm:space-y-6">
             {error && (
@@ -741,15 +740,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 <MapPin className="h-4 w-4 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
                 <span className="text-xs sm:text-sm break-words">{geoStatus}</span>
               </div>
-              <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm p-2 sm:p-3 bg-muted/50 rounded-lg border">
-                <Mic className="h-4 w-4 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
-                <span className="text-xs sm:text-sm break-words">{micStatus}</span>
-              </div>
             </div>
 
             {/* Таймер */}
-            <div className="text-center space-y-2 sm:space-y-3 py-3 sm:py-4 bg-gradient-to-br from-primary/5 to-primary/10 rounded-lg border-2 border-primary/20">
-              <div className="text-3xl sm:text-5xl font-bold font-mono text-primary tracking-wider">
+            <div className="text-center py-2 px-3 bg-muted/50 rounded-lg border flex items-center justify-center gap-2">
+              <div className="text-lg sm:text-xl font-bold font-mono text-primary tracking-wider">
                 {formatTime(duration)}
               </div>
             </div>
@@ -776,7 +771,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             </div>
           </CardContent>
         </Card>
-        </div>
       </div>
     </div>
   )
