@@ -600,7 +600,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }
 
   return (
-    <div className="bg-background min-h-screen">
+    <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
 
       {/* ─── Скроллируемый контент ─── */}
       {/* pb-[140px] — отступ снизу чтобы контент не прятался за фиксированной панелью */}
