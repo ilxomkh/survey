@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, Square, Loader2, MapPin, CheckCircle2 } from "lucide-react"
 import { apiClient } from "@/lib/api-client"
@@ -584,12 +584,15 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="max-w-sm w-full">
-          <CardContent className="pt-6 text-center space-y-3 px-4">
-            <Loader2 className="h-7 w-7 animate-spin text-primary mx-auto" />
-            <p className="font-semibold text-sm">Инициализация сессии...</p>
-            <p className="text-xs text-muted-foreground">{geoStatus}</p>
+      <div className="fixed inset-0 bg-background/95 flex items-center justify-center z-50 p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="pt-6 sm:pt-8 text-center space-y-3 sm:space-y-4 px-4 sm:px-6">
+            <Loader2 className="h-6 w-6 sm:h-8 sm:w-8 animate-spin text-primary mx-auto" />
+            <p className="font-semibold text-sm sm:text-base">Инициализация сессии...</p>
+            <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm text-muted-foreground">
+              <p>{geoStatus}</p>
+              <p>{micStatus}</p>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -597,153 +600,177 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Шапка: название + геолокация + таймер */}
-      <div className="sticky top-0 bg-background border-b z-10 px-4 py-2 flex items-center justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm truncate">{survey.title}</p>
-          {questions.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              Вопрос {currentQuestionIndex + 1} из {questions.length}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <MapPin className="h-3 w-3 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">
-            {geoStatus.startsWith("✓") ? "✓" : "..."}
-          </span>
-          <span className="font-mono text-sm font-bold text-primary">{formatTime(duration)}</span>
-        </div>
-      </div>
+    <div className="fixed inset-0 bg-background z-50 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row gap-2 sm:gap-3 overflow-hidden p-2 sm:p-3">
+        {/* Левая панель - вопросы опроса */}
+          <Card className="flex-1 flex flex-col min-h-0 shadow-lg overflow-hidden">
+          <CardHeader className="pb-2 sm:pb-4 border-b px-3 sm:px-6 flex-shrink-0">
+            <CardTitle className="text-base sm:text-xl font-semibold">{survey.title}</CardTitle>
+            {questions.length > 0 && (
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 sm:mt-2">
+                Вопрос {currentQuestionIndex + 1} из {questions.length}
+              </p>
+            )}
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col min-h-0 overflow-hidden pt-3 sm:pt-6 px-3 sm:px-6">
+            {loadingQuestions ? (
+              <div className="flex items-center justify-center flex-1">
+                <Loader2 className="h-5 w-5 sm:h-6 sm:w-6 animate-spin text-primary" />
+                <span className="ml-2 text-xs sm:text-sm text-muted-foreground">Загрузка вопросов...</span>
+              </div>
+            ) : questions.length === 0 ? (
+              <div className="flex items-center justify-center flex-1 text-center px-2">
+                <div>
+                  <p className="text-sm sm:text-base text-muted-foreground mb-2">Вопросы опроса не найдены</p>
+                  <p className="text-xs text-muted-foreground">Продолжайте запись аудио</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 overflow-y-auto -mx-3 sm:-mx-6 px-3 sm:px-6">
+                <div className="space-y-4 sm:space-y-6 pb-4">
+                  {currentQuestion && (
+                    <div className="space-y-4 sm:space-y-6">
+                      <div>
+                        <h3 className="font-semibold text-base sm:text-lg mb-2 sm:mb-3 leading-relaxed">
+                          {currentQuestion.title}
+                          {currentQuestion.required && <span className="text-red-500 ml-1">*</span>}
+                        </h3>
+                        <p className="text-xs text-muted-foreground mb-3 sm:mb-4">
+                          Тип: {currentQuestion.type}
+                        </p>
+                      </div>
 
-      {/* Контент */}
-      <div className="flex-1 px-4 py-4 space-y-4">
-        {error && (
-          <Alert variant="destructive" className="text-xs">
-            <AlertCircle className="h-3 w-3" />
-            <AlertDescription className="text-xs">{error}</AlertDescription>
-          </Alert>
-        )}
+                      {/* Отображение вопроса в зависимости от типа */}
+                      {currentQuestion.type === "multiple_choice" && currentQuestion.options && (
+                        <div className="space-y-2 sm:space-y-3">
+                          {currentQuestion.options.map((option, idx) => (
+                            <label
+                              key={idx}
+                              className="flex items-center space-x-2 sm:space-x-3 p-3 sm:p-4 border-2 rounded-lg cursor-pointer hover:bg-muted/50 hover:border-primary/50 active:bg-muted/70 transition-all duration-200"
+                            >
+                              <input
+                                type="radio"
+                                name={`question-${currentQuestion.id}`}
+                                value={option}
+                                checked={answers[currentQuestion.id] === option}
+                                onChange={() => handleAnswer(currentQuestion.id, option)}
+                                className="w-4 h-4 sm:w-5 sm:h-5 text-primary flex-shrink-0"
+                              />
+                              <span className="flex-1 text-sm sm:text-base break-words">{option}</span>
+                              {answers[currentQuestion.id] === option && (
+                                <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
+                              )}
+                            </label>
+                          ))}
+                        </div>
+                      )}
 
-        {loadingQuestions ? (
-          <div className="flex items-center justify-center py-10">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <span className="ml-2 text-sm text-muted-foreground">Загрузка вопросов...</span>
-          </div>
-        ) : questions.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-10">
-            Вопросы не найдены. Продолжайте запись.
-          </p>
-        ) : currentQuestion ? (
-          <div className="space-y-4">
-            {/* Вопрос */}
-            <h2 className="text-base font-semibold leading-snug">
-              {currentQuestion.title}
-              {currentQuestion.required && <span className="text-red-500 ml-1">*</span>}
-            </h2>
+                      {currentQuestion.type === "text" && (
+                        <textarea
+                          value={answers[currentQuestion.id] || ""}
+                          onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
+                          placeholder="Введите ваш ответ..."
+                          className="w-full min-h-[100px] sm:min-h-[120px] p-3 sm:p-4 text-sm sm:text-base border-2 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+                        />
+                      )}
 
-            {/* Варианты ответа */}
-            {currentQuestion.type === "multiple_choice" && currentQuestion.options && (
-              <div className="space-y-2">
-                {currentQuestion.options.map((option, idx) => (
-                  <label
-                    key={idx}
-                    className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
-                    style={{ borderColor: answers[currentQuestion.id] === option ? "hsl(var(--primary))" : undefined }}
-                  >
-                    <input
-                      type="radio"
-                      name={`question-${currentQuestion.id}`}
-                      value={option}
-                      checked={answers[currentQuestion.id] === option}
-                      onChange={() => handleAnswer(currentQuestion.id, option)}
-                      className="w-4 h-4 text-primary flex-shrink-0"
-                    />
-                    <span className="flex-1 text-sm break-words">{option}</span>
-                    {answers[currentQuestion.id] === option && (
-                      <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    )}
-                  </label>
-                ))}
+                      {currentQuestion.type === "yes_no" && (
+                        <div className="flex gap-2 sm:gap-3">
+                          <Button
+                            variant={answers[currentQuestion.id] === "yes" ? "default" : "outline"}
+                            onClick={() => handleAnswer(currentQuestion.id, "yes")}
+                            className="flex-1 h-10 sm:h-12 text-sm sm:text-base"
+                          >
+                            Да
+                          </Button>
+                          <Button
+                            variant={answers[currentQuestion.id] === "no" ? "default" : "outline"}
+                            onClick={() => handleAnswer(currentQuestion.id, "no")}
+                            className="flex-1 h-10 sm:h-12 text-sm sm:text-base"
+                          >
+                            Нет
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Навигация по вопросам */}
+                      <div className="flex gap-2 sm:gap-3 pt-4 sm:pt-6 border-t">
+                      {questions.length > 1 && (
+                          <Button
+                            variant="outline"
+                            onClick={handlePrevious}
+                            disabled={currentQuestionIndex === 0}
+                            className="flex-1 h-10 sm:h-11 text-sm sm:text-base"
+                          >
+                            Назад
+                          </Button>
+                        )}
+                          <Button
+                            onClick={handleNext}
+                          disabled={!canGoNext}
+                          className={`${questions.length > 1 ? "flex-1" : "w-full"} h-10 sm:h-11 text-sm sm:text-base`}
+                          >
+                            {isLastQuestion ? "Последний вопрос" : "Далее"}
+                          </Button>
+                        </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
+          </CardContent>
+        </Card>
 
-            {currentQuestion.type === "text" && (
-              <textarea
-                value={answers[currentQuestion.id] || ""}
-                onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
-                onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 300)}
-                placeholder="Введите ваш ответ..."
-                rows={4}
-                className="w-full p-3 text-sm border-2 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
-              />
+        {/* Правая панель - управление */}
+          <Card className="w-full lg:w-72 flex flex-col min-h-0 shadow-lg overflow-hidden">
+          <CardHeader className="pb-2 sm:pb-3 border-b px-3 sm:px-6 flex-shrink-0">
+            <CardTitle className="text-base sm:text-lg font-semibold">Статус</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col lg:overflow-y-auto pt-3 sm:pt-6 px-3 sm:px-6 space-y-4 sm:space-y-6">
+            {error && (
+              <Alert variant="destructive" className="text-xs sm:text-sm">
+                <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4" />
+                <AlertDescription className="text-xs sm:text-sm">{error}</AlertDescription>
+              </Alert>
             )}
 
-            {currentQuestion.type === "yes_no" && (
-              <div className="flex gap-3">
-                <Button
-                  variant={answers[currentQuestion.id] === "yes" ? "default" : "outline"}
-                  onClick={() => handleAnswer(currentQuestion.id, "yes")}
-                  className="flex-1 h-11"
-                >
-                  Да
-                </Button>
-                <Button
-                  variant={answers[currentQuestion.id] === "no" ? "default" : "outline"}
-                  onClick={() => handleAnswer(currentQuestion.id, "no")}
-                  className="flex-1 h-11"
-                >
-                  Нет
-                </Button>
+            {/* Статусы */}
+            <div className="space-y-2 sm:space-y-3">
+              <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm p-2 sm:p-3 bg-muted/50 rounded-lg border">
+                <MapPin className="h-4 w-4 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
+                <span className="text-xs sm:text-sm break-words">{geoStatus}</span>
               </div>
-            )}
+            </div>
 
-            {/* Навигация */}
-            {questions.length > 1 && (
-              <div className="flex gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  onClick={handlePrevious}
-                  disabled={currentQuestionIndex === 0}
-                  className="flex-1 h-10 text-sm"
-                >
-                  Назад
-                </Button>
-                {!isLastQuestion && (
-                  <Button
-                    onClick={handleNext}
-                    disabled={!canGoNext}
-                    className="flex-1 h-10 text-sm"
-                  >
-                    Далее
-                  </Button>
+            {/* Таймер */}
+            <div className="text-center py-2 px-3 bg-muted/50 rounded-lg border flex items-center justify-center gap-2">
+              <div className="text-lg sm:text-xl font-bold font-mono text-primary tracking-wider">
+                {formatTime(duration)}
+              </div>
+            </div>
+
+            {/* Кнопки управления */}
+            <div className="flex flex-col gap-2 sm:gap-3 mt-auto">
+              <Button
+                onClick={finishRecording}
+                disabled={loading}
+                className="w-full h-10 sm:h-11 text-sm sm:text-base bg-primary hover:bg-primary/90 gap-2 shadow-md"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
+                    Завершение...
+                  </>
+                ) : (
+                  <>
+                    <Square className="h-3 w-3 sm:h-4 sm:w-4" />
+                    Завершить
+                  </>
                 )}
-              </div>
-            )}
-          </div>
-        ) : null}
-      </div>
-
-      {/* Кнопка завершить — всегда внизу */}
-      <div className="px-4 pb-6 pt-3 border-t">
-        <Button
-          onClick={finishRecording}
-          disabled={loading}
-          className="w-full h-11 bg-primary hover:bg-primary/90 gap-2"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Завершение...
-            </>
-          ) : (
-            <>
-              <Square className="h-4 w-4" />
-              Завершить
-            </>
-          )}
-        </Button>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
