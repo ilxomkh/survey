@@ -556,10 +556,16 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }
 
   const handleAnswer = (questionId: string, answer: any) => {
-    setAnswers((prev) => ({
-      ...prev,
-      [questionId]: answer,
-    }))
+    setAnswers((prev) => ({ ...prev, [questionId]: answer }))
+    // Auto-show finish confirmation when last question is answered (non-text)
+    if (
+      isLastQuestion &&
+      currentQuestion?.id === questionId &&
+      currentQuestion?.type !== "text" &&
+      answer
+    ) {
+      setShowFinishConfirm(true)
+    }
   }
 
   const currentQuestion = questions[currentQuestionIndex]
