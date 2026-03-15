@@ -64,6 +64,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const [answers, setAnswers] = useState<Record<string, any>>({})
   const [loadingQuestions, setLoadingQuestions] = useState(true)
   const [showFinishConfirm, setShowFinishConfirm] = useState(false)
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   // Накапливаем промисы всех текущих загрузок чанков
@@ -687,8 +688,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 value={answers[currentQuestion.id] || ""}
                 onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
                 onFocus={(e) => {
+                  setKeyboardOpen(true)
                   const el = e.currentTarget
                   setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 350)
+                }}
+                onBlur={() => {
+                  // Небольшая задержка чтобы клик по кнопке успел сработать до скрытия панели
+                  setTimeout(() => setKeyboardOpen(false), 150)
                 }}
                 placeholder="Введите ваш ответ..."
                 rows={4}
@@ -754,10 +760,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       {/* ─── Фиксированная панель снизу ─── */}
       {/* position: fixed + safe-area-inset-bottom — не двигается при открытии клавиатуры */}
       <div
-        className="fixed left-0 right-0 bg-background border-t z-50 px-4 pt-3 space-y-2"
+        className="fixed bottom-0 left-0 right-0 bg-background border-t z-50 px-4 pt-3 space-y-2 transition-transform duration-200"
         style={{
-          bottom: "calc(-1 * var(--tg-keyboard-offset, 0px))",
           paddingBottom: "max(12px, env(safe-area-inset-bottom))",
+          transform: keyboardOpen ? "translateY(100%)" : "translateY(0)",
         }}
       >
         {/* GPS + таймер */}
