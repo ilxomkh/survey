@@ -694,7 +694,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 }}
                 onBlur={() => {
                   // Небольшая задержка чтобы клик по кнопке успел сработать до скрытия панели
-                  setTimeout(() => setKeyboardOpen(false), 150)
+                  setTimeout(() => {
+                    setKeyboardOpen(false)
+                    // Если это последний вопрос и ответ введён — показываем диалог завершения
+                    if (isLastQuestion && answers[currentQuestion.id]) {
+                      setShowFinishConfirm(true)
+                    }
+                  }, 150)
                 }}
                 placeholder="Введите ваш ответ..."
                 rows={4}
