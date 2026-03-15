@@ -612,7 +612,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       {/* ─── Скроллируемый контент ─── */}
       {/* pb-[140px] — отступ снизу чтобы контент не прятался за фиксированной панелью */}
       <div
-        className="pb-[140px] px-4 pt-4"
+        className="pb-[140px] px-4"
+        style={{ paddingTop: "var(--tg-safe-top, max(16px, env(safe-area-inset-top)))" }}
         onClick={(e) => {
           const tag = (e.target as HTMLElement).tagName
           if (!["INPUT", "TEXTAREA", "BUTTON", "LABEL", "SELECT"].includes(tag)) {
