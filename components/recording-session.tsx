@@ -754,8 +754,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       {/* ─── Фиксированная панель снизу ─── */}
       {/* position: fixed + safe-area-inset-bottom — не двигается при открытии клавиатуры */}
       <div
-        className="fixed bottom-0 left-0 right-0 bg-background border-t z-50 px-4 pt-3 space-y-2"
-        style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
+        className="fixed left-0 right-0 bg-background border-t z-50 px-4 pt-3 space-y-2"
+        style={{
+          bottom: "calc(-1 * var(--tg-keyboard-offset, 0px))",
+          paddingBottom: "max(12px, env(safe-area-inset-bottom))",
+        }}
       >
         {/* GPS + таймер */}
         <div className="flex items-center justify-between text-xs text-muted-foreground">
