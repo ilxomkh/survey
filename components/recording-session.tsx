@@ -63,6 +63,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<string, any>>({})
   const [loadingQuestions, setLoadingQuestions] = useState(true)
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   // Накапливаем промисы всех текущих загрузок чанков
@@ -719,7 +720,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 >
                   Назад
                 </Button>
-                {!isLastQuestion && (
+                {!isLastQuestion ? (
                   <Button
                     onClick={handleNext}
                     disabled={!canGoNext}
@@ -727,6 +728,15 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                   >
                     Далее
                   </Button>
+                ) : (
+                  canGoNext && (
+                    <Button
+                      onClick={() => setShowFinishConfirm(true)}
+                      className="flex-1 h-10 text-sm bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      Завершить опрос
+                    </Button>
+                  )
                 )}
               </div>
             )}
@@ -735,8 +745,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       </div>
 
       {/* ─── Фиксированная панель снизу ─── */}
-      {/* position: fixed — не двигается при открытии клавиатуры */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t z-50 px-4 py-3 space-y-2">
+      {/* position: fixed + safe-area-inset-bottom — не двигается при открытии клавиатуры */}
+      <div
+        className="fixed bottom-0 left-0 right-0 bg-background border-t z-50 px-4 pt-3 space-y-2"
+        style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
+      >
         {/* GPS + таймер */}
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
@@ -747,23 +760,46 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         </div>
 
         {/* Кнопка завершить */}
-        <Button
-          onClick={finishRecording}
-          disabled={loading}
-          className="w-full h-11 bg-primary hover:bg-primary/90 gap-2"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Завершение...
-            </>
-          ) : (
-            <>
-              <Square className="h-4 w-4" />
-              Завершить
-            </>
-          )}
-        </Button>
+        {showFinishConfirm ? (
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowFinishConfirm(false)}
+              className="flex-1 h-11 text-sm"
+            >
+              Нет, продолжить
+            </Button>
+            <Button
+              onClick={finishRecording}
+              disabled={loading}
+              className="flex-1 h-11 bg-destructive hover:bg-destructive/90 text-white text-sm"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Да, завершить"}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            onClick={() => setShowFinishConfirm(true)}
+            disabled={loading}
+            className="w-full h-11 bg-primary hover:bg-primary/90 gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Завершение...
+              </>
+            ) : (
+              <>
+                <Square className="h-4 w-4" />
+                Завершить
+              </>
+            )}
+          </Button>
+        )}
+
+        {showFinishConfirm && (
+          <p className="text-xs text-center text-muted-foreground">Точно хотите завершить опрос?</p>
+        )}
       </div>
     </div>
   )

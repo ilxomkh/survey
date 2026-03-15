@@ -11,12 +11,22 @@ export function TelegramInit() {
     tg.expand()
 
     // На новых версиях Telegram (7.8+) — полный fullscreen без шапки
-    if (tg.requestFullscreen) {
-      tg.requestFullscreen()
+    try {
+      if (typeof tg.requestFullscreen === "function") {
+        tg.requestFullscreen()
+      }
+    } catch {
+      // Старые клиенты не поддерживают requestFullscreen — игнорируем
     }
 
-    // Убираем кнопку закрытия / свайп вниз
+    // Запрещаем вертикальный свайп вниз чтобы не закрыть приложение
+    tg.disableVerticalSwipes?.()
+
+    // Убираем кнопку закрытия / подтверждение закрытия
     tg.enableClosingConfirmation?.()
+
+    // Скрываем MainButton если он виден (не нужен в нашем UI)
+    tg.MainButton?.hide?.()
   }, [])
 
   return null
