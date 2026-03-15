@@ -27,6 +27,20 @@ export function TelegramInit() {
 
     // Скрываем MainButton если он виден (не нужен в нашем UI)
     tg.MainButton?.hide?.()
+
+    // Устанавливаем CSS-переменную с реальным отступом сверху от Telegram
+    const setSafeTop = () => {
+      const top =
+        tg.safeAreaInsets?.top ??
+        tg.contentSafeAreaInsets?.top ??
+        0
+      // Минимум 60px в Telegram чтобы гарантированно не перекрывалось хедером
+      const safeTop = Math.max(top, tg.isExpanded ? 60 : 16)
+      document.documentElement.style.setProperty("--tg-safe-top", `${safeTop}px`)
+    }
+    setSafeTop()
+    tg.onEvent?.("safeAreaChanged", setSafeTop)
+    tg.onEvent?.("contentSafeAreaChanged", setSafeTop)
   }, [])
 
   return null

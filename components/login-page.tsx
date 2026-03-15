@@ -45,7 +45,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 to-secondary/5 px-4 pb-4" style={{ paddingTop: "max(16px, env(safe-area-inset-top))" }}>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 to-secondary/5 px-4 pb-4" style={{ paddingTop: "var(--tg-safe-top, max(16px, env(safe-area-inset-top)))" }}>
       <Card className="w-full max-w-md border-2 border-primary/10">
         <CardHeader className="space-y-2">
           <CardTitle className="text-2xl font-bold text-center">Система контроля опросов</CardTitle>
