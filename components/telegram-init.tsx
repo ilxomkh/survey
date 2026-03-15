@@ -46,16 +46,32 @@ export function TelegramInit() {
     tg.onEvent?.("safeAreaChanged", setSafeTop)
     tg.onEvent?.("contentSafeAreaChanged", setSafeTop)
 
-    // Когда клавиатура открывается, viewportHeight уменьшается, а viewportStableHeight остаётся.
-    // Устанавливаем отступ, чтобы фиксированная нижняя панель уходила ЗА клавиатуру (не над ней).
+    // Когда клавиатура открывается:
+    //   Android — window.innerHeight уменьшается
+    //   iOS     — window.visualViewport.height уменьшается (innerHeight остаётся прежним)
+    // В обоих случаях position:fixed; bottom:0 оказывается прямо НАД клавиатурой.
+    // Смещаем панель вниз на высоту клавиатуры, чтобы она скрылась ЗА ней.
+    const vpHeight = () => window.visualViewport?.height ?? window.innerHeight
+    let stableVPHeight = vpHeight()
+
     const setKeyboardOffset = () => {
-      const stable = tg.viewportStableHeight ?? tg.viewportHeight ?? window.innerHeight
-      const current = tg.viewportHeight ?? window.innerHeight
-      const offset = Math.max(0, stable - current)
+      const current = vpHeight()
+      // Если высота выросла — обновляем "стабильную" (клавиатура закрылась / expand)
+      if (current > stableVPHeight) {
+        stableVPHeight = current
+      }
+      const offset = Math.max(0, stableVPHeight - current)
       document.documentElement.style.setProperty("--tg-keyboard-offset", `${offset}px`)
     }
-    setKeyboardOffset()
+
+    window.addEventListener("resize", setKeyboardOffset)
+    window.visualViewport?.addEventListener("resize", setKeyboardOffset)
     tg.onEvent?.("viewportChanged", setKeyboardOffset)
+
+    return () => {
+      window.removeEventListener("resize", setKeyboardOffset)
+      window.visualViewport?.removeEventListener("resize", setKeyboardOffset)
+    }
   }, [])
 
   return null
