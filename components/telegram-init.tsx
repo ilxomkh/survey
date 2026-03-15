@@ -34,8 +34,12 @@ export function TelegramInit() {
         tg.safeAreaInsets?.top ??
         tg.contentSafeAreaInsets?.top ??
         0
-      // Минимум 60px в Telegram чтобы гарантированно не перекрывалось хедером
-      const safeTop = Math.max(top, tg.isExpanded ? 60 : 16)
+      // Минимум 90px — покрывает все стандартные телефоны:
+      // Android (статус-бар 24px + TG хедер 56px = 80px)
+      // iPhone без чёлки (20px + 56px = 76px)
+      // iPhone с чёлкой (44px + 56px = 100px → берём из safeAreaInsets)
+      // iPhone Dynamic Island (59px + 56px = 115px → берём из safeAreaInsets)
+      const safeTop = Math.max(top, tg.isExpanded ? 90 : 16)
       document.documentElement.style.setProperty("--tg-safe-top", `${safeTop}px`)
     }
     setSafeTop()
