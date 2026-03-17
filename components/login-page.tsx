@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Loader2, ClipboardList } from "lucide-react"
+import { AlertCircle, Loader2 } from "lucide-react"
+import Image from "next/image"
 import { apiClient } from "@/lib/api-client"
 
 interface LoginPageProps {
@@ -52,9 +53,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
       <div className="w-full max-w-sm">
         {/* Logo / Brand */}
         <div className="flex flex-col items-center mb-8">
-          <div className="h-16 w-16 rounded-2xl bg-primary flex items-center justify-center shadow-xl shadow-primary/30 mb-4">
-            <ClipboardList className="h-8 w-8 text-white" />
-          </div>
+          <Image src="/logo.jpg" alt="ProSurvey" width={64} height={64} className="rounded-2xl shadow-xl mb-4" />
           <h1 className="text-2xl font-bold text-foreground">ProSurvey</h1>
           <p className="text-sm text-muted-foreground mt-1">Система контроля опросов</p>
         </div>

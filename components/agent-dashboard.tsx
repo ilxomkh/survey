@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, Play, LogOut, Loader2, ClipboardList } from "lucide-react"
+import Image from "next/image"
 import { PreparationModal } from "./preparation-modal"
 import { apiClient } from "@/lib/api-client"
 
@@ -70,9 +71,7 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
         {/* Header */}
         <div className="flex items-center justify-between mb-8 pt-2">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30">
-              <ClipboardList className="h-5 w-5 text-white" />
-            </div>
+            <Image src="/logo.jpg" alt="ProSurvey" width={40} height={40} className="rounded-xl shadow-lg" />
             <div>
               <h1 className="text-xl font-bold text-foreground">Мои опросы</h1>
               <p className="text-xs text-muted-foreground">Выберите опрос для начала</p>
