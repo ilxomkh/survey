@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Loader2, MapPin, Mic, Info } from "lucide-react"
+import { AlertCircle, Loader2, MapPin, Mic, Shield } from "lucide-react"
 import { RecordingSession } from "./recording-session"
 import { apiClient } from "@/lib/api-client"
 import { storage } from "@/lib/storage"
@@ -32,12 +32,10 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
     setLoading(true)
 
     try {
-      // Проверяем поддержку геолокации
       if (!navigator.geolocation) {
         throw new Error("Геолокация не поддерживается вашим браузером")
       }
 
-      // Проверяем HTTPS (критично для Android)
       const isSecure = window.location.protocol === "https:" || window.location.hostname === "localhost"
       if (!isSecure) {
         console.warn("[PreparationModal] ⚠️ Небезопасное соединение. Android может блокировать геолокацию.")
@@ -79,7 +77,6 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
       const sessionId = data.session_id
       console.log("[PreparationModal] Сессия создана, получен session_id:", sessionId)
       setSessionId(sessionId)
-      // Сохраняем session_id в localStorage для использования в других запросах
       storage.setSessionId(sessionId)
       console.log("[PreparationModal] session_id сохранен в localStorage:", sessionId)
       setShowRecording(true)
@@ -96,33 +93,31 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-sm border-primary/20">
         <DialogHeader>
-          <DialogTitle className="text-xl">Подготовка к опросу</DialogTitle>
+          <DialogTitle className="text-lg font-semibold">{survey.title}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-6">
-          <div className="space-y-3">
-            <h3 className="font-semibold text-base">{survey.title}</h3>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Перед началом убедитесь, что всё готово:</p>
 
-            <Alert className="bg-primary/10 border-primary/20">
-              <MapPin className="h-4 w-4" />
-              <AlertDescription className="text-sm">Геолокация будет запрошена при старте</AlertDescription>
-            </Alert>
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 rounded-xl bg-primary/8 border border-primary/15 px-4 py-3">
+              <MapPin className="h-4 w-4 text-primary shrink-0" />
+              <span className="text-sm">Геолокация будет запрошена при старте</span>
+            </div>
 
-            <Alert className="bg-primary/10 border-primary/20">
-              <Mic className="h-4 w-4" />
-              <AlertDescription className="text-sm">Микрофон будет запрошен при старте</AlertDescription>
-            </Alert>
+            <div className="flex items-center gap-3 rounded-xl bg-primary/8 border border-primary/15 px-4 py-3">
+              <Mic className="h-4 w-4 text-primary shrink-0" />
+              <span className="text-sm">Микрофон будет запрошен при старте</span>
+            </div>
 
-            <Alert className="bg-accent/10 border-accent/20">
-              <Info className="h-4 w-4" />
-              <AlertDescription className="text-sm">
-                <div className="space-y-1">
-                  <p>✓ Опрос лицом к лицу</p>
-                  <p>✓ Аудиозапись автоматически</p>
-                </div>
-              </AlertDescription>
-            </Alert>
+            <div className="flex items-center gap-3 rounded-xl bg-[#7C65FF]/5 border border-[#7C65FF]/10 px-4 py-3">
+              <Shield className="h-4 w-4 text-primary/70 shrink-0" />
+              <div className="text-sm text-muted-foreground space-y-0.5">
+                <p>✓ Опрос лицом к лицу</p>
+                <p>✓ Аудиозапись автоматически</p>
+              </div>
+            </div>
           </div>
 
           {error && (
@@ -132,21 +127,26 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
             </Alert>
           )}
 
-          <div className="flex items-start space-x-2">
-            <Checkbox id="consent" checked={agreed} onCheckedChange={setAgreed} className="mt-1" />
+          <div className="flex items-start space-x-3 rounded-xl border border-border p-3">
+            <Checkbox
+              id="consent"
+              checked={agreed}
+              onCheckedChange={setAgreed}
+              className="mt-0.5 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+            />
             <label htmlFor="consent" className="text-sm text-muted-foreground cursor-pointer leading-relaxed">
               Я подтверждаю согласие респондента на проведение опроса и запись аудио
             </label>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 pt-1">
             <Button variant="outline" onClick={onClose} className="flex-1 bg-transparent">
               Отмена
             </Button>
             <Button
               onClick={handleStart}
               disabled={!agreed || loading}
-              className="flex-1 bg-primary hover:bg-primary/90 gap-2"
+              className="flex-1 bg-primary hover:bg-primary/90 shadow-sm shadow-primary/20 gap-2"
             >
               {loading ? (
                 <>
@@ -154,7 +154,7 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
                   Загрузка...
                 </>
               ) : (
-                "Начать запись и опрос"
+                "Начать"
               )}
             </Button>
           </div>

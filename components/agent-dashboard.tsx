@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Play, LogOut, Loader2 } from "lucide-react"
+import { AlertCircle, Play, LogOut, Loader2, ClipboardList } from "lucide-react"
 import { PreparationModal } from "./preparation-modal"
 import { apiClient } from "@/lib/api-client"
 
@@ -34,7 +34,6 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
           apiClient.setToken(token)
         }
 
-        // Загружаем ВСЕ опросы без фильтрации по языку или session_id
         const data = await apiClient.getSurveys()
         setSurveys(Array.isArray(data) ? data : [])
       } catch (err: any) {
@@ -53,24 +52,38 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#7C65FF]/10 via-white to-[#8888FC]/10">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Загрузка опросов...</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 to-secondary/5">
+    <div className="min-h-screen bg-gradient-to-br from-[#7C65FF]/8 via-white to-[#8888FC]/8">
       <div
-        className="max-w-2xl mx-auto px-4 pb-4"
+        className="max-w-2xl mx-auto px-4 pb-8"
         style={{ paddingTop: "var(--tg-safe-top, max(16px, env(safe-area-inset-top)))" }}
       >
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold">Мои опросы</h1>
-            <p className="text-muted-foreground">Выберите опрос для начала</p>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8 pt-2">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30">
+              <ClipboardList className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-foreground">Мои опросы</h1>
+              <p className="text-xs text-muted-foreground">Выберите опрос для начала</p>
+            </div>
           </div>
-          <Button variant="outline" size="sm" onClick={onLogout} className="gap-2 bg-transparent">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onLogout}
+            className="gap-1.5 text-muted-foreground hover:text-destructive hover:border-destructive/40 bg-transparent"
+          >
             <LogOut className="h-4 w-4" />
             Выход
           </Button>
@@ -84,42 +97,53 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
         )}
 
         {surveys.length === 0 ? (
-          <Card>
-            <CardContent className="pt-8 text-center">
-              <p className="text-muted-foreground">Опросов не найдено</p>
+          <Card className="border-dashed border-2 border-primary/20">
+            <CardContent className="pt-10 pb-10 text-center flex flex-col items-center gap-2">
+              <ClipboardList className="h-10 w-10 text-primary/30 mb-1" />
+              <p className="font-medium text-muted-foreground">Опросов не найдено</p>
+              <p className="text-xs text-muted-foreground">Обратитесь к администратору</p>
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {surveys.map((survey) => (
               <Card
                 key={survey.id}
-                className="border-2 border-primary/20 hover:border-primary/40 transition-colors cursor-pointer"
+                className={`border transition-all duration-200 ${
+                  survey.is_active
+                    ? "border-primary/20 hover:border-primary/50 hover:shadow-md hover:shadow-primary/10 cursor-pointer"
+                    : "border-border opacity-60"
+                }`}
                 onClick={() => survey.is_active && setSelectedSurvey(survey)}
               >
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg">{survey.title}</CardTitle>
-                      {survey.description && <CardDescription className="mt-1">{survey.description}</CardDescription>}
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base font-semibold leading-snug">{survey.title}</CardTitle>
+                      {survey.description && (
+                        <CardDescription className="mt-1 text-sm line-clamp-2">{survey.description}</CardDescription>
+                      )}
                     </div>
                     {!survey.is_active && (
-                      <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded">Неактивно</span>
+                      <span className="shrink-0 text-xs bg-muted text-muted-foreground px-2 py-1 rounded-full">
+                        Неактивно
+                      </span>
                     )}
                   </div>
                 </CardHeader>
                 {survey.is_active && (
-                  <CardContent>
-                    <div className="flex justify-end">
-                      <Button
-                        size="sm"
-                        className="bg-primary hover:bg-primary/90 gap-2"
-                        onClick={() => setSelectedSurvey(survey)}
-                      >
-                        <Play className="h-4 w-4" />
-                        Начать
-                      </Button>
-                    </div>
+                  <CardContent className="pt-0">
+                    <Button
+                      size="sm"
+                      className="w-full bg-primary hover:bg-primary/90 shadow-sm shadow-primary/20 gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedSurvey(survey)
+                      }}
+                    >
+                      <Play className="h-4 w-4" />
+                      Начать опрос
+                    </Button>
                   </CardContent>
                 )}
               </Card>
