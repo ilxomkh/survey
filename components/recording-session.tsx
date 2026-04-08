@@ -18,38 +18,15 @@ interface Question {
   type: string
   options?: string[]
   required?: boolean
-}
-
-interface SurveyQuestions {
-  questions: Question[]
-  tally_url?: string
+  scaleMin?: number
+  scaleMax?: number
+  multiple?: boolean
 }
 
 interface RecordingSessionProps {
   sessionId: string
   survey: Survey
   onComplete: () => void
-}
-
-// Функция для преобразования типов вопросов Tally в формат приложения
-function mapTallyTypeToQuestionType(tallyType: string): string {
-  const normalizedType = String(tallyType).toUpperCase()
-  const typeMap: Record<string, string> = {
-    TEXT: "text",
-    MULTIPLE_CHOICE: "multiple_choice",
-    MULTIPLECHOICE: "multiple_choice",
-    CHOICE: "multiple_choice",
-    YES_NO: "yes_no",
-    YESNO: "yes_no",
-    BOOLEAN: "yes_no",
-    text: "text",
-    multiple_choice: "multiple_choice",
-    multiplechoice: "multiple_choice",
-    yes_no: "yes_no",
-    yesno: "yes_no",
-    boolean: "yes_no",
-  }
-  return typeMap[normalizedType] || typeMap[tallyType] || "text"
 }
 
 export function RecordingSession({ sessionId, survey, onComplete }: RecordingSessionProps) {
@@ -67,174 +44,177 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const [keyboardOpen, setKeyboardOpen] = useState(false)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  // Накапливаем промисы всех текущих загрузок чанков
   const uploadPromisesRef = useRef<Promise<any>[]>([])
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const locationIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const lastPositionRef = useRef<GeolocationCoordinates | null>(null)
 
-  // Load survey questions
+  // ─── Парсинг блоков Tally ───────────────────────────────────────
+  const extractTextFromSchema = (schema: any): string => {
+    if (!schema || !Array.isArray(schema)) return ""
+    return schema
+      .map((item: any) => {
+        if (typeof item === "string") return item
+        if (Array.isArray(item) && item.length > 0 && typeof item[0] === "string") return item[0]
+        return ""
+      })
+      .filter(Boolean)
+      .join("")
+      .trim()
+  }
+
+  const parseTallyBlocks = (blocks: any[]): Question[] => {
+    const skipTypes = new Set(["FORM_TITLE", "PAGE_BREAK", "CONDITIONAL_LOGIC", "HEADING_2"])
+
+    const titleBlocks = blocks.filter(
+      (b: any) => b.type === "TITLE" && b.groupType === "QUESTION"
+    )
+
+    return titleBlocks
+      .map((titleBlock: any, questionIndex: number) => {
+        const questionText =
+          extractTextFromSchema(titleBlock.payload?.safeHTMLSchema) ||
+          titleBlock.payload?.title ||
+          titleBlock.text ||
+          ""
+
+        const titleBlockIndex = blocks.indexOf(titleBlock)
+        const nextTitleBlockIndex =
+          questionIndex < titleBlocks.length - 1
+            ? blocks.indexOf(titleBlocks[questionIndex + 1])
+            : blocks.length
+
+        const siblingBlocks = blocks.slice(titleBlockIndex + 1, nextTitleBlockIndex)
+        const firstSibling = siblingBlocks.find((b: any) => !skipTypes.has(b.type))
+        const groupType = firstSibling?.groupType || titleBlock.groupType || ""
+
+        // LINEAR_SCALE
+        if (groupType === "LINEAR_SCALE" || siblingBlocks.some((b: any) => b.type === "LINEAR_SCALE")) {
+          const scaleBlock = siblingBlocks.find((b: any) => b.type === "LINEAR_SCALE") || firstSibling
+          return {
+            id: titleBlock.uuid || `question_${questionIndex}`,
+            title: questionText,
+            type: "linear_scale",
+            scaleMin: scaleBlock?.payload?.startValue ?? 0,
+            scaleMax: scaleBlock?.payload?.endValue ?? 10,
+            required: titleBlock.payload?.isRequired === true,
+          }
+        }
+
+        // INPUT_NUMBER
+        if (groupType === "INPUT_NUMBER" || siblingBlocks.some((b: any) => b.type === "INPUT_NUMBER")) {
+          return {
+            id: titleBlock.uuid || `question_${questionIndex}`,
+            title: questionText,
+            type: "number",
+            required: titleBlock.payload?.isRequired === true,
+          }
+        }
+
+        // DROPDOWN
+        if (groupType === "DROPDOWN" || siblingBlocks.some((b: any) => b.type === "DROPDOWN_OPTION")) {
+          const optionBlocks = siblingBlocks.filter((b: any) => b.type === "DROPDOWN_OPTION")
+          const options = optionBlocks
+            .map((b: any) => b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "")
+            .filter(Boolean)
+          return {
+            id: titleBlock.uuid || `question_${questionIndex}`,
+            title: questionText,
+            type: "dropdown",
+            options,
+            required: titleBlock.payload?.isRequired === true,
+          }
+        }
+
+        // CHECKBOX — множественный выбор
+        if (groupType === "CHECKBOXES" || siblingBlocks.some((b: any) => b.type === "CHECKBOX")) {
+          const optionBlocks = siblingBlocks.filter((b: any) => b.type === "CHECKBOX")
+          const options = optionBlocks
+            .map((b: any) => b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "")
+            .filter(Boolean)
+          return {
+            id: titleBlock.uuid || `question_${questionIndex}`,
+            title: questionText,
+            type: "checkbox",
+            options,
+            multiple: true,
+            required: titleBlock.payload?.isRequired === true,
+          }
+        }
+
+        // MULTIPLE_CHOICE — одиночный выбор
+        const choiceOptionBlocks = siblingBlocks.filter(
+          (b: any) => b.type === "MULTIPLE_CHOICE_OPTION" || b.groupType === "MULTIPLE_CHOICE"
+        )
+        if (choiceOptionBlocks.length > 0) {
+          const options = choiceOptionBlocks
+            .map((b: any) => b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "")
+            .filter(Boolean)
+          return {
+            id: titleBlock.uuid || `question_${questionIndex}`,
+            title: questionText,
+            type: "multiple_choice",
+            options,
+            required: titleBlock.payload?.isRequired === true,
+          }
+        }
+
+        // YES_NO
+        if (groupType === "YES_NO") {
+          return {
+            id: titleBlock.uuid || `question_${questionIndex}`,
+            title: questionText,
+            type: "yes_no",
+            required: titleBlock.payload?.isRequired === true,
+          }
+        }
+
+        // TEXT по умолчанию
+        return {
+          id: titleBlock.uuid || `question_${questionIndex}`,
+          title: questionText,
+          type: "text",
+          required: titleBlock.payload?.isRequired === true,
+        }
+      })
+      .filter((q) => q.title.trim().length > 0)
+  }
+
+  // ─── Загрузка вопросов ──────────────────────────────────────────
   useEffect(() => {
     const loadQuestions = async () => {
       try {
         const token = localStorage.getItem("auth_token")
-        if (token) {
-          apiClient.setToken(token)
-        }
+        if (token) apiClient.setToken(token)
 
-        console.log("[RecordingSession] Загрузка вопросов опроса для survey_id:", survey.id, "session_id:", sessionId)
+        console.log("[RecordingSession] Загрузка вопросов survey_id:", survey.id, "session_id:", sessionId)
         const surveyData = await apiClient.getSurveyQuestions(survey.id, sessionId)
-        console.log("[RecordingSession] Получены данные опроса (полный объект):", JSON.stringify(surveyData, null, 2))
+        console.log("[RecordingSession] Ответ API:", JSON.stringify(surveyData, null, 2))
 
-        // Обработка разных форматов ответа API
         let extractedQuestions: Question[] = []
-        
+
         if (surveyData) {
-          // Формат 1: { questions: Question[] }
           if (Array.isArray(surveyData.questions)) {
-            console.log("[RecordingSession] Формат 1: найден массив questions")
             extractedQuestions = surveyData.questions
-          }
-          // Формат 2: { blocks: Block[] } - формат Tally
-          else if (Array.isArray(surveyData.blocks)) {
-            console.log("[RecordingSession] Формат 2: найден массив blocks, количество:", surveyData.blocks.length)
-            
-            // Функция для извлечения текста из safeHTMLSchema
-            const extractTextFromSchema = (schema: any): string => {
-              if (!schema || !Array.isArray(schema)) return ""
-              return schema
-                .map((item: any) => {
-                  if (typeof item === "string") return item
-                  if (Array.isArray(item) && item.length > 0 && typeof item[0] === "string") {
-                    return item[0]
-                  }
-                  return ""
-                })
-                .filter(Boolean)
-                .join("")
-                .trim()
-            }
-            
-            // Находим все блоки с заголовками вопросов (TITLE с groupType QUESTION)
-            const questionTitleBlocks = surveyData.blocks.filter(
-              (block: any) => block.type === "TITLE" && block.groupType === "QUESTION"
-            )
-            
-            console.log("[RecordingSession] Найдено блоков с заголовками вопросов:", questionTitleBlocks.length)
-            
-            // Обрабатываем каждый вопрос
-            extractedQuestions = questionTitleBlocks.map((titleBlock: any, questionIndex: number) => {
-              // Извлекаем текст вопроса из payload.safeHTMLSchema или payload.title
-              const questionText = 
-                extractTextFromSchema(titleBlock.payload?.safeHTMLSchema) ||
-                titleBlock.payload?.title ||
-                titleBlock.text ||
-                ""
-              
-              console.log(`[RecordingSession] Вопрос ${questionIndex + 1}: "${questionText}"`)
-              
-              // Определяем тип вопроса по следующим блокам
-              // Ищем опции MULTIPLE_CHOICE_OPTION после этого заголовка
-              const titleBlockIndex = surveyData.blocks.indexOf(titleBlock)
-              const nextTitleBlockIndex = questionIndex < questionTitleBlocks.length - 1
-                ? surveyData.blocks.indexOf(questionTitleBlocks[questionIndex + 1])
-                : surveyData.blocks.length
-              
-              // Ищем опции между текущим заголовком и следующим
-              const optionBlocks = surveyData.blocks
-                .slice(titleBlockIndex + 1, nextTitleBlockIndex)
-                .filter((block: any) => 
-                  block.type === "MULTIPLE_CHOICE_OPTION" || 
-                  block.groupType === "MULTIPLE_CHOICE"
-                )
-              
-              console.log(`[RecordingSession] Вопрос ${questionIndex + 1} - найдено опций:`, optionBlocks.length)
-              
-              // Определяем тип вопроса
-              let questionType = "text"
-              if (optionBlocks.length > 0) {
-                questionType = "multiple_choice"
-              } else {
-                // Проверяем groupType заголовка или следующих блоков
-                const nextBlock = surveyData.blocks[titleBlockIndex + 1]
-                if (nextBlock?.groupType === "MULTIPLE_CHOICE") {
-                  questionType = "multiple_choice"
-                } else if (nextBlock?.groupType === "YES_NO") {
-                  questionType = "yes_no"
-                }
-              }
-              
-              // Извлекаем опции
-              const options: string[] = []
-              if (questionType === "multiple_choice" && optionBlocks.length > 0) {
-                optionBlocks.forEach((optionBlock: any) => {
-                  const optionText = 
-                    optionBlock.payload?.text ||
-                    optionBlock.text ||
-                    extractTextFromSchema(optionBlock.payload?.safeHTMLSchema) ||
-                    ""
-                  if (optionText) {
-                    options.push(optionText)
-                  }
-                })
-                console.log(`[RecordingSession] Вопрос ${questionIndex + 1} - опции:`, options)
-              }
-              
-              // Проверяем обязательность вопроса
-              const isRequired = 
-                optionBlocks.some((block: any) => block.payload?.isRequired === true) ||
-                titleBlock.payload?.isRequired === true ||
-                false
-              
-              const question: Question = {
-                id: titleBlock.uuid || `question_${questionIndex}`,
-                title: questionText,
-                type: questionType,
-                required: isRequired,
-              }
-              
-              if (options.length > 0) {
-                question.options = options
-              }
-              
-              console.log(`[RecordingSession] Сформированный вопрос ${questionIndex + 1}:`, question)
-              return question
-            }).filter((q: Question) => q.title && q.title.trim().length > 0)
-          }
-          // Формат 3: массив вопросов напрямую
-          else if (Array.isArray(surveyData)) {
-            console.log("[RecordingSession] Формат 3: ответ - массив напрямую")
+          } else if (Array.isArray(surveyData.blocks)) {
+            extractedQuestions = parseTallyBlocks(surveyData.blocks)
+          } else if (Array.isArray(surveyData)) {
             extractedQuestions = surveyData
-          }
-          // Формат 4: возможно, данные в другом поле
-          else {
-            console.log("[RecordingSession] Формат 4: проверка других полей...")
-            // Пробуем найти данные в других возможных полях
-            const possibleFields = ['data', 'items', 'results', 'content']
-            for (const field of possibleFields) {
-              if (surveyData[field] && Array.isArray(surveyData[field])) {
-                console.log(`[RecordingSession] Найдены данные в поле ${field}`)
-                extractedQuestions = surveyData[field]
+          } else {
+            for (const field of ["data", "items", "results", "content"]) {
+              if (Array.isArray((surveyData as any)[field])) {
+                extractedQuestions = (surveyData as any)[field]
                 break
               }
             }
           }
         }
-        
-        console.log("[RecordingSession] Итоговые извлеченные вопросы:", extractedQuestions)
-        console.log("[RecordingSession] Количество вопросов:", extractedQuestions.length)
+
+        console.log("[RecordingSession] Извлечено вопросов:", extractedQuestions.length)
         setQuestions(extractedQuestions)
-        
-        if (extractedQuestions.length === 0) {
-          console.error("[RecordingSession] ❌ Не удалось извлечь вопросы из ответа!")
-          console.error("[RecordingSession] Структура ответа:", JSON.stringify(surveyData, null, 2))
-        } else {
-          console.log("[RecordingSession] ✅ Успешно извлечено вопросов:", extractedQuestions.length)
-        }
       } catch (err) {
         console.error("[RecordingSession] Ошибка загрузки вопросов:", err)
-        // Не блокируем запись, если вопросы не загрузились
       } finally {
         setLoadingQuestions(false)
       }
@@ -243,17 +223,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     loadQuestions()
   }, [survey.id, sessionId])
 
-  // Initialize recording and geolocation
+  // ─── Инициализация записи и геолокации ─────────────────────────
   useEffect(() => {
     const initializeSession = async () => {
       try {
-        // Request geolocation
         const token = localStorage.getItem("auth_token")
-        if (token) {
-          apiClient.setToken(token)
-        }
+        if (token) apiClient.setToken(token)
 
-        // Проверяем поддержку геолокации
         if (!navigator.geolocation) {
           setGeoStatus("✗ Геолокация не поддерживается")
           setError("Геолокация не поддерживается вашим браузером")
@@ -261,145 +237,73 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           return
         }
 
-        // Проверяем HTTPS (критично для Android)
-        const isSecure = window.location.protocol === "https:" || window.location.hostname === "localhost"
-        if (!isSecure) {
-          console.warn("[RecordingSession] ⚠️ Небезопасное соединение. Android может блокировать геолокацию.")
-        }
-
-        // Предварительная проверка доступности геолокации
-        console.log("[RecordingSession] Проверка доступности геолокации...")
         await new Promise<void>((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(
-            (success) => {
-              console.log("[RecordingSession] ✅ Геолокация доступна:", success)
-              resolve()
-            },
+            () => resolve(),
             (err) => {
               alert("Геолокация запрещена. Разрешите доступ в настройках телефона")
-              console.error("[RecordingSession] ❌ Геолокация недоступна:", err)
               setGeoStatus("✗ Геолокация запрещена")
               setError("Геолокация запрещена. Разрешите доступ в настройках телефона")
               reject(err)
             },
-            {
-              enableHighAccuracy: true,
-              timeout: 15000,
-              maximumAge: 0,
-            }
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
           )
         })
 
-        console.log("[RecordingSession] Запуск отслеживания геолокации...")
-        
-        // Fallback: сначала пробуем точную геолокацию, потом обычную
         let watchId: number | null = null
         let fallbackAttempted = false
 
         const startWatching = (highAccuracy: boolean) => {
-          if (watchId !== null) {
-            navigator.geolocation.clearWatch(watchId)
-          }
-
+          if (watchId !== null) navigator.geolocation.clearWatch(watchId)
           watchId = navigator.geolocation.watchPosition(
             async (position) => {
-              const accuracy = position.coords.accuracy
-              // Сохраняем последнюю позицию для использования при завершении
               lastPositionRef.current = position.coords
-              setGeoStatus(`✓ Локация получена (${accuracy.toFixed(0)}м)`)
-              console.log("[RecordingSession] ✅ Геолокация обновлена:", {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                accuracy,
-                highAccuracy,
-              })
-              
+              setGeoStatus(`✓ Локация получена (${position.coords.accuracy.toFixed(0)}м)`)
               try {
                 await apiClient.updateLocation(
                   sessionId,
                   position.coords.latitude,
                   position.coords.longitude,
-                  position.coords.accuracy,
+                  position.coords.accuracy
                 )
               } catch (err) {
                 console.error("[RecordingSession] Ошибка отправки геолокации:", err)
               }
             },
             (err) => {
-              console.error("[RecordingSession] ❌ Ошибка геолокации:", {
-                code: err.code,
-                message: err.message,
-                PERMISSION_DENIED: err.PERMISSION_DENIED,
-                POSITION_UNAVAILABLE: err.POSITION_UNAVAILABLE,
-                TIMEOUT: err.TIMEOUT,
-                highAccuracy,
-              })
-
-              // Fallback: если точная геолокация не работает, пробуем обычную
               if (highAccuracy && !fallbackAttempted) {
                 fallbackAttempted = true
-                console.log("[RecordingSession] Пробуем fallback с enableHighAccuracy: false")
-                setGeoStatus("Попытка получить геолокацию...")
                 startWatching(false)
                 return
               }
-
-              let errorMessage = "Геолокация недоступна"
               switch (err.code) {
-                case err.PERMISSION_DENIED:
-                  errorMessage = "Доступ к геолокации запрещен"
-                  setGeoStatus("✗ Доступ запрещен")
-                  break
-                case err.POSITION_UNAVAILABLE:
-                  errorMessage = "Геолокация недоступна"
-                  setGeoStatus("✗ GPS недоступен")
-                  break
-                case err.TIMEOUT:
-                  errorMessage = "Таймаут получения геолокации"
-                  setGeoStatus("✗ Таймаут GPS")
-                  break
-                default:
-                  setGeoStatus(`✗ Ошибка: ${err.message}`)
-              }
-              
-              if (!fallbackAttempted) {
-                setError(errorMessage)
+                case err.PERMISSION_DENIED: setGeoStatus("✗ Доступ запрещен"); break
+                case err.POSITION_UNAVAILABLE: setGeoStatus("✗ GPS недоступен"); break
+                case err.TIMEOUT: setGeoStatus("✗ Таймаут GPS"); break
+                default: setGeoStatus(`✗ Ошибка: ${err.message}`)
               }
             },
-            {
-              enableHighAccuracy: highAccuracy,
-              timeout: 10000, // 10 секунд таймаут (критично для Android)
-              maximumAge: 5000, // Использовать кеш не старше 5 секунд
-            }
+            { enableHighAccuracy: highAccuracy, timeout: 10000, maximumAge: 5000 }
           )
         }
 
-        // Начинаем с точной геолокации
         startWatching(true)
-
-        // Сохраняем watchId для очистки
         locationIntervalRef.current = watchId as any
 
-        // Request microphone
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
         streamRef.current = stream
         setMicStatus("✓ Микрофон подключен")
 
-        // Setup media recorder
         const mediaRecorder = new MediaRecorder(stream)
         mediaRecorderRef.current = mediaRecorder
 
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
-            // Каждый чанк загружается немедленно и независимо.
-            // Сохраняем промис, чтобы finishRecording мог дождаться завершения всех загрузок.
             const uploadPromise = (async () => {
               try {
-                console.log("[RecordingSession] Отправка аудио чанка, размер:", event.data.size, "байт")
                 await apiClient.uploadAudio(sessionId, event.data)
-                console.log("[RecordingSession] ✅ Аудио чанк успешно отправлен")
               } catch (err) {
-                console.error("[RecordingSession] ❌ Ошибка отправки аудио чанка:", err)
+                console.error("[RecordingSession] Ошибка отправки аудио:", err)
               }
             })()
             uploadPromisesRef.current.push(uploadPromise)
@@ -425,112 +329,61 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     }
   }, [sessionId])
 
-  // Auto-start recording
   useEffect(() => {
-    if (!loading && mediaRecorderRef.current && !isRecording) {
-      startRecording()
-    }
+    if (!loading && mediaRecorderRef.current && !isRecording) startRecording()
   }, [loading])
 
   const startRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "inactive") {
-      mediaRecorderRef.current.start(10000) // Upload every 10 seconds
+      mediaRecorderRef.current.start(10000)
       setIsRecording(true)
-
-      timerRef.current = setInterval(() => {
-        setDuration((prev) => prev + 1)
-      }, 1000)
+      timerRef.current = setInterval(() => setDuration((prev) => prev + 1), 1000)
     }
   }
 
   const finishRecording = async () => {
     setLoading(true)
-
     try {
       if (timerRef.current) clearInterval(timerRef.current)
 
-      // Останавливаем запись: сначала requestData() чтобы получить последний чанк,
-      // затем stop(). Оба вызова синхронно триггерят ondataavailable → промис попадает в uploadPromisesRef.
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         await new Promise<void>((resolve) => {
           const recorder = mediaRecorderRef.current!
           recorder.onstop = () => resolve()
-          if (recorder.state === "recording") {
-            recorder.requestData() // получаем последний незаконченный чанк
-          }
+          if (recorder.state === "recording") recorder.requestData()
           recorder.stop()
         })
         setIsRecording(false)
       }
 
-      // Ждём завершения ВСЕХ загрузок чанков (включая последний от requestData/stop)
-      console.log("[RecordingSession] Ожидание завершения всех загрузок чанков...")
       await Promise.allSettled(uploadPromisesRef.current)
       uploadPromisesRef.current = []
-      console.log("[RecordingSession] ✅ Все чанки загружены")
 
-      // Останавливаем поток микрофона
       streamRef.current?.getTracks().forEach((track) => track.stop())
 
-      // Получаем финальную геолокацию
       let position: GeolocationCoordinates
-      
-      // Используем последнюю сохраненную позицию, если она есть
+
       if (lastPositionRef.current) {
-        console.log("[RecordingSession] Использование последней известной геолокации:", {
-          latitude: lastPositionRef.current.latitude,
-          longitude: lastPositionRef.current.longitude,
-          accuracy: lastPositionRef.current.accuracy,
-        })
         position = lastPositionRef.current
       } else {
-        // Если последней позиции нет, пытаемся получить новую
-        console.log("[RecordingSession] Последней позиции нет, запрос новой геолокации...")
-        
-      if (!navigator.geolocation) {
-        throw new Error("Геолокация не поддерживается")
+        if (!navigator.geolocation) throw new Error("Геолокация не поддерживается")
+        position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
+          const timeoutId = setTimeout(() => reject(new Error("Таймаут получения геолокации")), 15000)
+          navigator.geolocation.getCurrentPosition(
+            (pos) => { clearTimeout(timeoutId); resolve(pos.coords) },
+            (err) => { clearTimeout(timeoutId); reject(err) },
+            { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 }
+          )
+        })
       }
 
-        try {
-          position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
-            // Увеличиваем таймаут до 15 секунд и используем кеш до 30 секунд
-        const timeoutId = setTimeout(() => {
-          console.error("[RecordingSession] Timeout финальной геолокации")
-          reject(new Error("Таймаут получения геолокации"))
-            }, 15000)
-
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            clearTimeout(timeoutId)
-            console.log("[RecordingSession] ✅ Финальная геолокация получена:", {
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              accuracy: pos.coords.accuracy,
-            })
-            resolve(pos.coords)
-          },
-          (err) => {
-            clearTimeout(timeoutId)
-            console.error("[RecordingSession] ❌ Ошибка финальной геолокации:", err)
-            reject(err)
-          },
-          {
-                enableHighAccuracy: false,
-                timeout: 15000,
-                maximumAge: 30000, // Используем кеш до 30 секунд
-              }
-            )
-          })
-        } catch (err) {
-          // Если не удалось получить новую позицию, используем дефолтные значения
-          console.warn("[RecordingSession] ⚠️ Не удалось получить геолокацию, используем дефолтные значения")
-          throw new Error("Не удалось получить геолокацию для завершения сессии")
-        }
-      }
-
-      // Формируем список ответов в формате, ожидаемом бэкендом: [{key, question, type, value}]
       const surveyAnswersList = questions
-        .filter((q) => answers[q.id] !== undefined && answers[q.id] !== null && answers[q.id] !== "")
+        .filter((q) => {
+          const val = answers[q.id]
+          if (val === undefined || val === null || val === "") return false
+          if (Array.isArray(val) && val.length === 0) return false
+          return true
+        })
         .map((q) => ({
           key: q.id,
           question: q.title,
@@ -538,13 +391,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           value: answers[q.id],
         }))
 
-      console.log("[RecordingSession] Завершение сессии с ответами:", surveyAnswersList)
       await apiClient.completeSession(sessionId, position.latitude, position.longitude, position.accuracy, surveyAnswersList)
-      console.log("[RecordingSession] ✅ Сессия успешно завершена")
-
       onComplete()
     } catch (err: any) {
-      console.error("[RecordingSession] ❌ Ошибка завершения сессии:", err)
       setError(err?.message || "Ошибка завершения сессии")
       setLoading(false)
     }
@@ -558,36 +407,42 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   const handleAnswer = (questionId: string, answer: any) => {
     setAnswers((prev) => ({ ...prev, [questionId]: answer }))
-    // Auto-show finish confirmation when last question is answered (non-text)
     if (
       isLastQuestion &&
       currentQuestion?.id === questionId &&
-      currentQuestion?.type !== "text" &&
+      !["text", "number"].includes(currentQuestion?.type) &&
       answer
     ) {
       setShowFinishConfirm(true)
     }
   }
 
+  const handleCheckboxAnswer = (questionId: string, option: string) => {
+    setAnswers((prev) => {
+      const current: string[] = Array.isArray(prev[questionId]) ? prev[questionId] : []
+      const updated = current.includes(option)
+        ? current.filter((o) => o !== option)
+        : [...current, option]
+      return { ...prev, [questionId]: updated }
+    })
+  }
+
   const currentQuestion = questions[currentQuestionIndex]
   const isLastQuestion = currentQuestionIndex === questions.length - 1
   const canGoNext = currentQuestion
     ? currentQuestion.required
-      ? answers[currentQuestion.id] !== undefined && answers[currentQuestion.id] !== ""
+      ? answers[currentQuestion.id] !== undefined &&
+        answers[currentQuestion.id] !== "" &&
+        (Array.isArray(answers[currentQuestion.id]) ? answers[currentQuestion.id].length > 0 : true)
       : true
     : true
 
   const handleNext = () => {
-    if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex((prev) => prev + 1)
-    }
-    // Ответы будут отправлены при завершении сессии
+    if (currentQuestionIndex < questions.length - 1) setCurrentQuestionIndex((prev) => prev + 1)
   }
 
   const handlePrevious = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex((prev) => prev - 1)
-    }
+    if (currentQuestionIndex > 0) setCurrentQuestionIndex((prev) => prev - 1)
   }
 
   if (loading) {
@@ -609,9 +464,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
-
-      {/* ─── Скроллируемый контент ─── */}
-      {/* pb-[140px] — отступ снизу чтобы контент не прятался за фиксированной панелью */}
       <div
         className="pb-[140px] px-4"
         style={{ paddingTop: "var(--tg-safe-top, max(16px, env(safe-area-inset-top)))" }}
@@ -622,7 +474,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }}
       >
-        {/* Заголовок опроса */}
+        {/* Заголовок */}
         <div className="mb-4">
           <h2 className="font-semibold text-base sm:text-lg">{survey.title}</h2>
           {questions.length > 0 && (
@@ -656,14 +508,16 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               {currentQuestion.required && <span className="text-red-500 ml-1">*</span>}
             </h3>
 
-            {/* Multiple choice */}
+            {/* MULTIPLE_CHOICE — одиночный выбор */}
             {currentQuestion.type === "multiple_choice" && currentQuestion.options && (
               <div className="space-y-2">
                 {currentQuestion.options.map((option, idx) => (
                   <label
                     key={idx}
                     className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
-                    style={{ borderColor: answers[currentQuestion.id] === option ? "hsl(var(--primary))" : undefined }}
+                    style={{
+                      borderColor: answers[currentQuestion.id] === option ? "hsl(var(--primary))" : undefined,
+                    }}
                   >
                     <input
                       type="radio"
@@ -682,7 +536,94 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               </div>
             )}
 
-            {/* Text */}
+            {/* DROPDOWN — выпадающий список */}
+            {currentQuestion.type === "dropdown" && currentQuestion.options && (
+              <select
+                value={answers[currentQuestion.id] || ""}
+                onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
+                className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary bg-background"
+              >
+                <option value="">— Выберите вариант —</option>
+                {currentQuestion.options.map((option, idx) => (
+                  <option key={idx} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* CHECKBOX — множественный выбор */}
+            {currentQuestion.type === "checkbox" && currentQuestion.options && (
+              <div className="space-y-2">
+                {currentQuestion.options.map((option, idx) => {
+                  const selected: string[] = Array.isArray(answers[currentQuestion.id])
+                    ? answers[currentQuestion.id]
+                    : []
+                  const isChecked = selected.includes(option)
+                  return (
+                    <label
+                      key={idx}
+                      className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
+                      style={{ borderColor: isChecked ? "hsl(var(--primary))" : undefined }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => handleCheckboxAnswer(currentQuestion.id, option)}
+                        className="w-4 h-4 text-primary flex-shrink-0"
+                      />
+                      <span className="flex-1 text-sm break-words">{option}</span>
+                      {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* LINEAR_SCALE — шкала */}
+            {currentQuestion.type === "linear_scale" && (
+              <div className="space-y-3">
+                <div className="flex gap-2 flex-wrap">
+                  {Array.from(
+                    { length: (currentQuestion.scaleMax ?? 10) - (currentQuestion.scaleMin ?? 0) + 1 },
+                    (_, i) => (currentQuestion.scaleMin ?? 0) + i
+                  ).map((val) => (
+                    <button
+                      key={val}
+                      onClick={() => handleAnswer(currentQuestion.id, val)}
+                      className={`w-10 h-10 rounded-lg border-2 text-sm font-semibold transition-colors ${
+                        answers[currentQuestion.id] === val
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "border-border hover:border-primary"
+                      }`}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Точно нет</span>
+                  <span>Точно да</span>
+                </div>
+              </div>
+            )}
+
+            {/* INPUT_NUMBER — число */}
+            {currentQuestion.type === "number" && (
+              <input
+                type="number"
+                value={answers[currentQuestion.id] ?? ""}
+                onChange={(e) =>
+                  handleAnswer(currentQuestion.id, e.target.value ? Number(e.target.value) : "")
+                }
+                onFocus={() => setKeyboardOpen(true)}
+                onBlur={() => setTimeout(() => setKeyboardOpen(false), 150)}
+                placeholder="Введите число..."
+                className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+              />
+            )}
+
+            {/* TEXT — текст */}
             {currentQuestion.type === "text" && (
               <textarea
                 value={answers[currentQuestion.id] || ""}
@@ -693,13 +634,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                   setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 350)
                 }}
                 onBlur={() => {
-                  // Небольшая задержка чтобы клик по кнопке успел сработать до скрытия панели
                   setTimeout(() => {
                     setKeyboardOpen(false)
-                    // Если это последний вопрос и ответ введён — показываем диалог завершения
-                    if (isLastQuestion && answers[currentQuestion.id]) {
-                      setShowFinishConfirm(true)
-                    }
+                    if (isLastQuestion && answers[currentQuestion.id]) setShowFinishConfirm(true)
                   }, 150)
                 }}
                 placeholder="Введите ваш ответ..."
@@ -708,7 +645,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               />
             )}
 
-            {/* Yes/No */}
+            {/* YES_NO */}
             {currentQuestion.type === "yes_no" && (
               <div className="flex gap-3">
                 <Button
@@ -740,11 +677,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                   Назад
                 </Button>
                 {!isLastQuestion ? (
-                  <Button
-                    onClick={handleNext}
-                    disabled={!canGoNext}
-                    className="flex-1 h-10 text-sm"
-                  >
+                  <Button onClick={handleNext} disabled={!canGoNext} className="flex-1 h-10 text-sm">
                     Далее
                   </Button>
                 ) : (
@@ -764,7 +697,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       </div>
 
       {/* ─── Фиксированная панель снизу ─── */}
-      {/* position: fixed + safe-area-inset-bottom — не двигается при открытии клавиатуры */}
       <div
         className="fixed bottom-0 left-0 right-0 bg-background border-t z-50 px-4 pt-3 space-y-2 transition-transform duration-200"
         style={{
@@ -772,7 +704,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           transform: keyboardOpen ? "translateY(100%)" : "translateY(0)",
         }}
       >
-        {/* GPS + таймер */}
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
             <MapPin className="h-3 w-3 text-primary" />
@@ -781,7 +712,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           <span className="font-mono font-bold text-primary text-sm">{formatTime(duration)}</span>
         </div>
 
-        {/* Кнопка завершить */}
         {showFinishConfirm ? (
           <div className="flex gap-2">
             <Button
