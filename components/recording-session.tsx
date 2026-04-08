@@ -6,17 +6,24 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, Square, Loader2, MapPin, CheckCircle2 } from "lucide-react"
 import { apiClient } from "@/lib/api-client"
+import { buildLogicEngine, TallyLogicEngine, LogicResult, Answers } from "@/lib/tally-logic-engine"
 
 interface Survey {
   id: number
   title: string
 }
 
+// option uuid + text birga saqlanadi
+interface QuestionOption {
+  uuid: string
+  text: string
+}
+
 interface Question {
-  id: string
+  id: string        // blockGroupUuid (input blok groupUuid) — answers kaliti va engine kaliti
   title: string
   type: string
-  options?: string[]
+  options?: QuestionOption[]
   required?: boolean
   scaleMin?: number
   scaleMax?: number
@@ -38,10 +45,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const [micStatus, setMicStatus] = useState("Запрос микрофона...")
   const [questions, setQuestions] = useState<Question[]>([])
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [answers, setAnswers] = useState<Record<string, any>>({})
+  const [answers, setAnswers] = useState<Answers>({})
   const [loadingQuestions, setLoadingQuestions] = useState(true)
   const [showFinishConfirm, setShowFinishConfirm] = useState(false)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
+
+  // Conditional logic
+  const [logicEngine, setLogicEngine] = useState<TallyLogicEngine | null>(null)
+  const [logicResult, setLogicResult] = useState<LogicResult>({
+    hiddenGroupUuids: new Set(),
+    jumpToPageUuid: null,
+  })
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const uploadPromisesRef = useRef<Promise<any>[]>([])
@@ -50,7 +64,19 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const locationIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const lastPositionRef = useRef<GeolocationCoordinates | null>(null)
 
-  // ─── Парсинг блоков Tally ───────────────────────────────────────
+  // ─── Answers o'zgarganda logic qayta hisoblash ──────────────
+  useEffect(() => {
+    if (!logicEngine) return
+    const result = logicEngine.evaluate(answers)
+    setLogicResult(result)
+  }, [answers, logicEngine])
+
+  // ─── Visible questions (yashirilmaganlar) ──────────────────
+  const visibleQuestions = questions.filter(
+    (q) => !logicResult.hiddenGroupUuids.has(q.id)
+  )
+
+  // ─── Парсинг блоков Tally ───────────────────────────────────
   const extractTextFromSchema = (schema: any): string => {
     if (!schema || !Array.isArray(schema)) return ""
     return schema
@@ -65,7 +91,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }
 
   const parseTallyBlocks = (blocks: any[]): Question[] => {
-    const skipTypes = new Set(["FORM_TITLE", "PAGE_BREAK", "CONDITIONAL_LOGIC", "HEADING_2"])
+    // CONDITIONAL_LOGIC bu yerda skip QILINMAYDI — engine uchun kerak
+    // Faqat UI uchun keraksiz turlar o'tkazib yuboriladi
+    const skipTypes = new Set(["FORM_TITLE", "PAGE_BREAK", "HEADING_2", "CONDITIONAL_LOGIC", "HIDDEN_FIELDS"])
 
     const titleBlocks = blocks.filter(
       (b: any) => b.type === "TITLE" && b.groupType === "QUESTION"
@@ -92,20 +120,24 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         // LINEAR_SCALE
         if (groupType === "LINEAR_SCALE" || siblingBlocks.some((b: any) => b.type === "LINEAR_SCALE")) {
           const scaleBlock = siblingBlocks.find((b: any) => b.type === "LINEAR_SCALE") || firstSibling
+          // id = scaleBlock groupUuid (engine shu uuid ni kutadi)
+          const groupId = scaleBlock?.groupUuid || titleBlock.groupUuid
           return {
-            id: titleBlock.uuid || `question_${questionIndex}`,
+            id: groupId,
             title: questionText,
             type: "linear_scale",
-            scaleMin: scaleBlock?.payload?.startValue ?? 0,
-            scaleMax: scaleBlock?.payload?.endValue ?? 10,
+            scaleMin: scaleBlock?.payload?.startValue ?? scaleBlock?.payload?.start ?? 0,
+            scaleMax: scaleBlock?.payload?.endValue ?? scaleBlock?.payload?.end ?? 10,
             required: titleBlock.payload?.isRequired === true,
           }
         }
 
         // INPUT_NUMBER
         if (groupType === "INPUT_NUMBER" || siblingBlocks.some((b: any) => b.type === "INPUT_NUMBER")) {
+          const inputBlock = siblingBlocks.find((b: any) => b.type === "INPUT_NUMBER")
+          const groupId = inputBlock?.groupUuid || titleBlock.groupUuid
           return {
-            id: titleBlock.uuid || `question_${questionIndex}`,
+            id: groupId,
             title: questionText,
             type: "number",
             required: titleBlock.payload?.isRequired === true,
@@ -115,11 +147,15 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         // DROPDOWN
         if (groupType === "DROPDOWN" || siblingBlocks.some((b: any) => b.type === "DROPDOWN_OPTION")) {
           const optionBlocks = siblingBlocks.filter((b: any) => b.type === "DROPDOWN_OPTION")
-          const options = optionBlocks
-            .map((b: any) => b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "")
-            .filter(Boolean)
+          const options: QuestionOption[] = optionBlocks
+            .map((b: any) => ({
+              uuid: b.uuid,
+              text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
+            }))
+            .filter((o) => o.text)
+          const groupId = optionBlocks[0]?.groupUuid || titleBlock.groupUuid
           return {
-            id: titleBlock.uuid || `question_${questionIndex}`,
+            id: groupId,
             title: questionText,
             type: "dropdown",
             options,
@@ -127,14 +163,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // CHECKBOX — множественный выбор
+        // CHECKBOXES — multiple choice
         if (groupType === "CHECKBOXES" || siblingBlocks.some((b: any) => b.type === "CHECKBOX")) {
           const optionBlocks = siblingBlocks.filter((b: any) => b.type === "CHECKBOX")
-          const options = optionBlocks
-            .map((b: any) => b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "")
-            .filter(Boolean)
+          const options: QuestionOption[] = optionBlocks
+            .map((b: any) => ({
+              uuid: b.uuid,
+              text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
+            }))
+            .filter((o) => o.text)
+          const groupId = optionBlocks[0]?.groupUuid || titleBlock.groupUuid
           return {
-            id: titleBlock.uuid || `question_${questionIndex}`,
+            id: groupId,
             title: questionText,
             type: "checkbox",
             options,
@@ -143,16 +183,21 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // MULTIPLE_CHOICE — одиночный выбор
+        // MULTIPLE_CHOICE — single choice
         const choiceOptionBlocks = siblingBlocks.filter(
           (b: any) => b.type === "MULTIPLE_CHOICE_OPTION" || b.groupType === "MULTIPLE_CHOICE"
         )
         if (choiceOptionBlocks.length > 0) {
-          const options = choiceOptionBlocks
-            .map((b: any) => b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "")
-            .filter(Boolean)
+          const options: QuestionOption[] = choiceOptionBlocks
+            .map((b: any) => ({
+              uuid: b.uuid,
+              text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
+            }))
+            .filter((o) => o.text)
+          // groupId = choice option larning groupUuid (barida bir xil)
+          const groupId = choiceOptionBlocks[0]?.groupUuid || titleBlock.groupUuid
           return {
-            id: titleBlock.uuid || `question_${questionIndex}`,
+            id: groupId,
             title: questionText,
             type: "multiple_choice",
             options,
@@ -163,16 +208,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         // YES_NO
         if (groupType === "YES_NO") {
           return {
-            id: titleBlock.uuid || `question_${questionIndex}`,
+            id: titleBlock.groupUuid,
             title: questionText,
             type: "yes_no",
             required: titleBlock.payload?.isRequired === true,
           }
         }
 
-        // TEXT по умолчанию
+        // INPUT_TEXT — default
+        const textBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
+        const groupId = textBlock?.groupUuid || titleBlock.groupUuid
         return {
-          id: titleBlock.uuid || `question_${questionIndex}`,
+          id: groupId,
           title: questionText,
           type: "text",
           required: titleBlock.payload?.isRequired === true,
@@ -181,24 +228,24 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       .filter((q) => q.title.trim().length > 0)
   }
 
-  // ─── Загрузка вопросов ──────────────────────────────────────────
+  // ─── Загрузка вопросов ──────────────────────────────────────
   useEffect(() => {
     const loadQuestions = async () => {
       try {
         const token = localStorage.getItem("auth_token")
         if (token) apiClient.setToken(token)
 
-        console.log("[RecordingSession] Загрузка вопросов survey_id:", survey.id, "session_id:", sessionId)
         const surveyData = await apiClient.getSurveyQuestions(survey.id, sessionId)
-        console.log("[RecordingSession] Ответ API:", JSON.stringify(surveyData, null, 2))
 
         let extractedQuestions: Question[] = []
+        let rawBlocks: any[] = []
 
         if (surveyData) {
-          if (Array.isArray(surveyData.questions)) {
+          if (Array.isArray(surveyData.blocks)) {
+            rawBlocks = surveyData.blocks
+            extractedQuestions = parseTallyBlocks(rawBlocks)
+          } else if (Array.isArray(surveyData.questions)) {
             extractedQuestions = surveyData.questions
-          } else if (Array.isArray(surveyData.blocks)) {
-            extractedQuestions = parseTallyBlocks(surveyData.blocks)
           } else if (Array.isArray(surveyData)) {
             extractedQuestions = surveyData
           } else {
@@ -211,8 +258,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        console.log("[RecordingSession] Извлечено вопросов:", extractedQuestions.length)
         setQuestions(extractedQuestions)
+
+        // Engine qurish — blocks mavjud bo'lsa
+        if (rawBlocks.length > 0) {
+          const engine = buildLogicEngine(rawBlocks)
+          setLogicEngine(engine)
+        }
       } catch (err) {
         console.error("[RecordingSession] Ошибка загрузки вопросов:", err)
       } finally {
@@ -223,7 +275,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     loadQuestions()
   }, [survey.id, sessionId])
 
-  // ─── Инициализация записи и геолокации ─────────────────────────
+  // ─── Инициализация записи и геолокации ─────────────────────
   useEffect(() => {
     const initializeSession = async () => {
       try {
@@ -377,19 +429,40 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         })
       }
 
-      const surveyAnswersList = questions
+      // UUID → Text conversion для backend
+      const surveyAnswersList = visibleQuestions
         .filter((q) => {
           const val = answers[q.id]
           if (val === undefined || val === null || val === "") return false
           if (Array.isArray(val) && val.length === 0) return false
           return true
         })
-        .map((q) => ({
-          key: q.id,
-          question: q.title,
-          type: q.type,
-          value: answers[q.id],
-        }))
+        .map((q) => {
+          let value = answers[q.id]
+
+          // uuid → text
+          if (q.type === "multiple_choice" && q.options) {
+            const found = q.options.find((o) => o.uuid === value)
+            value = found?.text ?? value
+          }
+          if (q.type === "checkbox" && q.options && Array.isArray(value)) {
+            value = (value as string[]).map((uuid) => {
+              const found = q.options!.find((o) => o.uuid === uuid)
+              return found?.text ?? uuid
+            })
+          }
+          if (q.type === "dropdown" && q.options) {
+            const found = q.options.find((o) => o.uuid === value)
+            value = found?.text ?? value
+          }
+
+          return {
+            key: q.id,
+            question: q.title,
+            type: q.type,
+            value,
+          }
+        })
 
       await apiClient.completeSession(sessionId, position.latitude, position.longitude, position.accuracy, surveyAnswersList)
       onComplete()
@@ -405,46 +478,63 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     return `${m}:${s.toString().padStart(2, "0")}`
   }
 
-  const handleAnswer = (questionId: string, answer: any) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: answer }))
+  // ─── Answer handlers ────────────────────────────────────────
+  // MUHIM: multiple_choice va dropdown uchun uuid saqlanadi (text emas)
+  // Checkbox uchun uuid[] massivi saqlanadi
+
+  const handleAnswer = (questionId: string, value: any) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: value }))
     if (
-      isLastQuestion &&
+      isLastVisible &&
       currentQuestion?.id === questionId &&
       !["text", "number"].includes(currentQuestion?.type) &&
-      answer
+      value
     ) {
       setShowFinishConfirm(true)
     }
   }
 
-  const handleCheckboxAnswer = (questionId: string, option: string) => {
+  const handleCheckboxAnswer = (questionId: string, optionUuid: string) => {
     setAnswers((prev) => {
       const current: string[] = Array.isArray(prev[questionId]) ? prev[questionId] : []
-      const updated = current.includes(option)
-        ? current.filter((o) => o !== option)
-        : [...current, option]
+      const updated = current.includes(optionUuid)
+        ? current.filter((o) => o !== optionUuid)
+        : [...current, optionUuid]
       return { ...prev, [questionId]: updated }
     })
   }
 
-  const currentQuestion = questions[currentQuestionIndex]
-  const isLastQuestion = currentQuestionIndex === questions.length - 1
+  // ─── Navigation ─────────────────────────────────────────────
+  const currentQuestion = visibleQuestions[currentQuestionIndex]
+  const isLastVisible = currentQuestionIndex === visibleQuestions.length - 1
+
   const canGoNext = currentQuestion
     ? currentQuestion.required
       ? answers[currentQuestion.id] !== undefined &&
         answers[currentQuestion.id] !== "" &&
-        (Array.isArray(answers[currentQuestion.id]) ? answers[currentQuestion.id].length > 0 : true)
+        (Array.isArray(answers[currentQuestion.id])
+          ? answers[currentQuestion.id].length > 0
+          : true)
       : true
     : true
 
   const handleNext = () => {
-    if (currentQuestionIndex < questions.length - 1) setCurrentQuestionIndex((prev) => prev + 1)
+    // JUMP_TO_PAGE triggered — oprosni tugatish
+    if (logicResult.jumpToPageUuid) {
+      setShowFinishConfirm(true)
+      return
+    }
+
+    if (currentQuestionIndex < visibleQuestions.length - 1) {
+      setCurrentQuestionIndex((prev) => prev + 1)
+    }
   }
 
   const handlePrevious = () => {
     if (currentQuestionIndex > 0) setCurrentQuestionIndex((prev) => prev - 1)
   }
 
+  // ─── Loading screen ──────────────────────────────────────────
   if (loading) {
     return (
       <div className="fixed inset-0 bg-background/95 flex items-center justify-center z-50 p-4">
@@ -462,6 +552,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     )
   }
 
+  // ─── Main render ─────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
       <div
@@ -477,9 +568,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         {/* Заголовок */}
         <div className="mb-4">
           <h2 className="font-semibold text-base sm:text-lg">{survey.title}</h2>
-          {questions.length > 0 && (
+          {visibleQuestions.length > 0 && (
             <p className="text-xs text-muted-foreground mt-1">
-              Вопрос {currentQuestionIndex + 1} из {questions.length}
+              Вопрос {currentQuestionIndex + 1} из {visibleQuestions.length}
             </p>
           )}
         </div>
@@ -496,7 +587,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
             <span className="ml-2 text-sm text-muted-foreground">Загрузка вопросов...</span>
           </div>
-        ) : questions.length === 0 ? (
+        ) : visibleQuestions.length === 0 ? (
           <p className="text-sm text-muted-foreground py-10 text-center">
             Вопросы не найдены. Продолжайте запись.
           </p>
@@ -508,27 +599,30 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               {currentQuestion.required && <span className="text-red-500 ml-1">*</span>}
             </h3>
 
-            {/* MULTIPLE_CHOICE — одиночный выбор */}
+            {/* MULTIPLE_CHOICE — uuid saqlanadi, text ko'rsatiladi */}
             {currentQuestion.type === "multiple_choice" && currentQuestion.options && (
               <div className="space-y-2">
-                {currentQuestion.options.map((option, idx) => (
+                {currentQuestion.options.map((option) => (
                   <label
-                    key={idx}
+                    key={option.uuid}
                     className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
                     style={{
-                      borderColor: answers[currentQuestion.id] === option ? "hsl(var(--primary))" : undefined,
+                      borderColor:
+                        answers[currentQuestion.id] === option.uuid
+                          ? "hsl(var(--primary))"
+                          : undefined,
                     }}
                   >
                     <input
                       type="radio"
                       name={`question-${currentQuestion.id}`}
-                      value={option}
-                      checked={answers[currentQuestion.id] === option}
-                      onChange={() => handleAnswer(currentQuestion.id, option)}
+                      value={option.uuid}
+                      checked={answers[currentQuestion.id] === option.uuid}
+                      onChange={() => handleAnswer(currentQuestion.id, option.uuid)}
                       className="w-4 h-4 text-primary flex-shrink-0"
                     />
-                    <span className="flex-1 text-sm break-words">{option}</span>
-                    {answers[currentQuestion.id] === option && (
+                    <span className="flex-1 text-sm break-words">{option.text}</span>
+                    {answers[currentQuestion.id] === option.uuid && (
                       <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
                     )}
                   </label>
@@ -536,7 +630,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               </div>
             )}
 
-            {/* DROPDOWN — выпадающий список */}
+            {/* DROPDOWN — uuid saqlanadi, text ko'rsatiladi */}
             {currentQuestion.type === "dropdown" && currentQuestion.options && (
               <select
                 value={answers[currentQuestion.id] || ""}
@@ -544,35 +638,35 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary bg-background"
               >
                 <option value="">— Выберите вариант —</option>
-                {currentQuestion.options.map((option, idx) => (
-                  <option key={idx} value={option}>
-                    {option}
+                {currentQuestion.options.map((option) => (
+                  <option key={option.uuid} value={option.uuid}>
+                    {option.text}
                   </option>
                 ))}
               </select>
             )}
 
-            {/* CHECKBOX — множественный выбор */}
+            {/* CHECKBOX — uuid[] saqlanadi */}
             {currentQuestion.type === "checkbox" && currentQuestion.options && (
               <div className="space-y-2">
-                {currentQuestion.options.map((option, idx) => {
+                {currentQuestion.options.map((option) => {
                   const selected: string[] = Array.isArray(answers[currentQuestion.id])
                     ? answers[currentQuestion.id]
                     : []
-                  const isChecked = selected.includes(option)
+                  const isChecked = selected.includes(option.uuid)
                   return (
                     <label
-                      key={idx}
+                      key={option.uuid}
                       className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
                       style={{ borderColor: isChecked ? "hsl(var(--primary))" : undefined }}
                     >
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        onChange={() => handleCheckboxAnswer(currentQuestion.id, option)}
+                        onChange={() => handleCheckboxAnswer(currentQuestion.id, option.uuid)}
                         className="w-4 h-4 text-primary flex-shrink-0"
                       />
-                      <span className="flex-1 text-sm break-words">{option}</span>
+                      <span className="flex-1 text-sm break-words">{option.text}</span>
                       {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
                     </label>
                   )
@@ -580,12 +674,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               </div>
             )}
 
-            {/* LINEAR_SCALE — шкала */}
+            {/* LINEAR_SCALE */}
             {currentQuestion.type === "linear_scale" && (
               <div className="space-y-3">
                 <div className="flex gap-2 flex-wrap">
                   {Array.from(
-                    { length: (currentQuestion.scaleMax ?? 10) - (currentQuestion.scaleMin ?? 0) + 1 },
+                    {
+                      length:
+                        (currentQuestion.scaleMax ?? 10) -
+                        (currentQuestion.scaleMin ?? 0) +
+                        1,
+                    },
                     (_, i) => (currentQuestion.scaleMin ?? 0) + i
                   ).map((val) => (
                     <button
@@ -608,13 +707,16 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               </div>
             )}
 
-            {/* INPUT_NUMBER — число */}
+            {/* INPUT_NUMBER */}
             {currentQuestion.type === "number" && (
               <input
                 type="number"
                 value={answers[currentQuestion.id] ?? ""}
                 onChange={(e) =>
-                  handleAnswer(currentQuestion.id, e.target.value ? Number(e.target.value) : "")
+                  handleAnswer(
+                    currentQuestion.id,
+                    e.target.value ? Number(e.target.value) : ""
+                  )
                 }
                 onFocus={() => setKeyboardOpen(true)}
                 onBlur={() => setTimeout(() => setKeyboardOpen(false), 150)}
@@ -623,7 +725,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               />
             )}
 
-            {/* TEXT — текст */}
+            {/* TEXT */}
             {currentQuestion.type === "text" && (
               <textarea
                 value={answers[currentQuestion.id] || ""}
@@ -631,12 +733,16 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 onFocus={(e) => {
                   setKeyboardOpen(true)
                   const el = e.currentTarget
-                  setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 350)
+                  setTimeout(
+                    () => el.scrollIntoView({ behavior: "smooth", block: "center" }),
+                    350
+                  )
                 }}
                 onBlur={() => {
                   setTimeout(() => {
                     setKeyboardOpen(false)
-                    if (isLastQuestion && answers[currentQuestion.id]) setShowFinishConfirm(true)
+                    if (isLastVisible && answers[currentQuestion.id])
+                      setShowFinishConfirm(true)
                   }, 150)
                 }}
                 placeholder="Введите ваш ответ..."
@@ -666,7 +772,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             )}
 
             {/* Навигация */}
-            {questions.length > 1 && (
+            {visibleQuestions.length > 1 && (
               <div className="flex gap-2 pt-2 border-t">
                 <Button
                   variant="outline"
@@ -676,8 +782,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 >
                   Назад
                 </Button>
-                {!isLastQuestion ? (
-                  <Button onClick={handleNext} disabled={!canGoNext} className="flex-1 h-10 text-sm">
+                {!isLastVisible ? (
+                  <Button
+                    onClick={handleNext}
+                    disabled={!canGoNext}
+                    className="flex-1 h-10 text-sm"
+                  >
                     Далее
                   </Button>
                 ) : (
@@ -726,7 +836,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               disabled={loading}
               className="flex-1 h-11 bg-destructive hover:bg-destructive/90 text-white text-sm"
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Да, завершить"}
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Да, завершить"
+              )}
             </Button>
           </div>
         ) : (
@@ -750,7 +864,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         )}
 
         {showFinishConfirm && (
-          <p className="text-xs text-center text-muted-foreground">Точно хотите завершить опрос?</p>
+          <p className="text-xs text-center text-muted-foreground">
+            Точно хотите завершить опрос?
+          </p>
         )}
       </div>
     </div>
