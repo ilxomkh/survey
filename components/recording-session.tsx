@@ -19,6 +19,13 @@ interface QuestionOption {
   text: string
 }
 
+/** Tally: «Другой» — MULTIPLE_CHOICE_OPTION + INPUT_TEXT/TEXTAREA с groupType MULTIPLE_CHOICE */
+interface OtherSpecifyMeta {
+  optionUuid: string
+  answerKey: string
+  required: boolean
+}
+
 interface Question {
   id: string        // blockGroupUuid (input blok groupUuid) — answers kaliti va engine kaliti
   title: string
@@ -28,6 +35,7 @@ interface Question {
   scaleMin?: number
   scaleMax?: number
   multiple?: boolean
+  otherSpecify?: OtherSpecifyMeta
 }
 
 interface RecordingSessionProps {
@@ -183,9 +191,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // MULTIPLE_CHOICE — single choice
+        // MULTIPLE_CHOICE — single choice (faqat option bloklari; INPUT_TEXT "Другой" alohida)
         const choiceOptionBlocks = siblingBlocks.filter(
-          (b: any) => b.type === "MULTIPLE_CHOICE_OPTION" || b.groupType === "MULTIPLE_CHOICE"
+          (b: any) => b.type === "MULTIPLE_CHOICE_OPTION"
         )
         if (choiceOptionBlocks.length > 0) {
           const options: QuestionOption[] = choiceOptionBlocks
@@ -194,14 +202,51 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
             }))
             .filter((o) => o.text)
-          // groupId = choice option larning groupUuid (barida bir xil)
           const groupId = choiceOptionBlocks[0]?.groupUuid || titleBlock.groupUuid
+
+          const otherTextBlock = siblingBlocks.find(
+            (b: any) =>
+              (b.type === "INPUT_TEXT" || b.type === "TEXTAREA") &&
+              (b.groupType === "MULTIPLE_CHOICE" || b.groupUuid === groupId)
+          )
+
+          let otherSpecify: OtherSpecifyMeta | undefined
+          if (otherTextBlock) {
+            const textIdx = siblingBlocks.indexOf(otherTextBlock)
+            const mcBefore = siblingBlocks
+              .slice(0, textIdx)
+              .filter((b: any) => b.type === "MULTIPLE_CHOICE_OPTION")
+            const flagged = choiceOptionBlocks.find(
+              (b: any) => b.payload?.isOther === true || b.payload?.other === true
+            )
+            let otherOptionUuid =
+              flagged?.uuid ||
+              (mcBefore.length > 0 ? mcBefore[mcBefore.length - 1].uuid : undefined)
+            if (!otherOptionUuid && otherTextBlock) {
+              const byLabel = options.find((o) =>
+                /^(другой|другое|other|інше)\b/i.test(o.text.trim())
+              )
+              if (byLabel) otherOptionUuid = byLabel.uuid
+            }
+            if (otherOptionUuid) {
+              const g = otherTextBlock.groupUuid
+              const answerKey =
+                g && g !== groupId ? g : otherTextBlock.uuid
+              otherSpecify = {
+                optionUuid: otherOptionUuid,
+                answerKey,
+                required: otherTextBlock.payload?.isRequired === true,
+              }
+            }
+          }
+
           return {
             id: groupId,
             title: questionText,
             type: "multiple_choice",
             options,
             required: titleBlock.payload?.isRequired === true,
+            otherSpecify,
           }
         }
 
@@ -429,6 +474,19 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         })
       }
 
+      for (const q of visibleQuestions) {
+        if (q.type !== "multiple_choice" || !q.otherSpecify) continue
+        if (answers[q.id] !== q.otherSpecify.optionUuid) continue
+        if (q.otherSpecify.required) {
+          const spec = String(answers[q.otherSpecify.answerKey] ?? "").trim()
+          if (!spec) {
+            setError("Укажите текст для варианта «Другой»")
+            setLoading(false)
+            return
+          }
+        }
+      }
+
       // UUID → Text conversion для backend
       const surveyAnswersList = visibleQuestions
         .filter((q) => {
@@ -442,8 +500,16 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
           // uuid → text
           if (q.type === "multiple_choice" && q.options) {
-            const found = q.options.find((o) => o.uuid === value)
+            const rawUuid = answers[q.id]
+            const found = q.options.find((o) => o.uuid === rawUuid)
             value = found?.text ?? value
+            if (
+              q.otherSpecify &&
+              rawUuid === q.otherSpecify.optionUuid
+            ) {
+              const spec = String(answers[q.otherSpecify.answerKey] ?? "").trim()
+              if (spec) value = `${value}: ${spec}`
+            }
           }
           if (q.type === "checkbox" && q.options && Array.isArray(value)) {
             value = (value as string[]).map((uuid) => {
@@ -482,8 +548,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   // MUHIM: multiple_choice va dropdown uchun uuid saqlanadi (text emas)
   // Checkbox uchun uuid[] massivi saqlanadi
 
-  const handleAnswer = (questionId: string, value: any) => {
+  const handleAnswer = (questionId: string, value: any, otherSpecify?: OtherSpecifyMeta) => {
     const newAnswers = { ...answers, [questionId]: value }
+    if (otherSpecify && value !== otherSpecify.optionUuid) {
+      delete newAnswers[otherSpecify.answerKey]
+    }
     setAnswers(newAnswers)
 
     // Синхронно считаем логику с новыми ответами — не ждём useEffect
@@ -505,6 +574,15 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       !["text", "number"].includes(currentQuestion?.type) &&
       value
     ) {
+      if (
+        currentQuestion?.type === "multiple_choice" &&
+        currentQuestion.otherSpecify &&
+        value === currentQuestion.otherSpecify.optionUuid &&
+        currentQuestion.otherSpecify.required
+      ) {
+        const spec = String(newAnswers[currentQuestion.otherSpecify.answerKey] ?? "").trim()
+        if (!spec) return
+      }
       setShowFinishConfirm(true)
     }
   }
@@ -525,11 +603,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   const canGoNext = currentQuestion
     ? currentQuestion.required
-      ? answers[currentQuestion.id] !== undefined &&
-        answers[currentQuestion.id] !== "" &&
-        (Array.isArray(answers[currentQuestion.id])
-          ? answers[currentQuestion.id].length > 0
-          : true)
+      ? (() => {
+        const v = answers[currentQuestion.id]
+        if (v === undefined || v === "") return false
+        if (Array.isArray(v) && v.length === 0) return false
+        const os = currentQuestion.otherSpecify
+        if (os && v === os.optionUuid && os.required) {
+          const spec = String(answers[os.answerKey] ?? "").trim()
+          if (!spec) return false
+        }
+        return true
+      })()
       : true
     : true
 
@@ -576,7 +660,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         onClick={(e) => {
           const tag = (e.target as HTMLElement).tagName
           if (!["INPUT", "TEXTAREA", "BUTTON", "LABEL", "SELECT"].includes(tag)) {
-            ;(document.activeElement as HTMLElement)?.blur()
+            ; (document.activeElement as HTMLElement)?.blur()
           }
         }}
       >
@@ -633,7 +717,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                       name={`question-${currentQuestion.id}`}
                       value={option.uuid}
                       checked={answers[currentQuestion.id] === option.uuid}
-                      onChange={() => handleAnswer(currentQuestion.id, option.uuid)}
+                      onChange={() =>
+                        handleAnswer(currentQuestion.id, option.uuid, currentQuestion.otherSpecify)
+                      }
                       className="w-4 h-4 text-primary flex-shrink-0"
                     />
                     <span className="flex-1 text-sm break-words">{option.text}</span>
@@ -642,6 +728,45 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     )}
                   </label>
                 ))}
+                {currentQuestion.otherSpecify &&
+                  answers[currentQuestion.id] === currentQuestion.otherSpecify.optionUuid && (
+                    <textarea
+                      value={answers[currentQuestion.otherSpecify.answerKey] || ""}
+                      onChange={(e) =>
+                        setAnswers((prev) => ({
+                          ...prev,
+                          [currentQuestion.otherSpecify!.answerKey]: e.target.value,
+                        }))
+                      }
+                      onFocus={(e) => {
+                        setKeyboardOpen(true)
+                        const el = e.currentTarget
+                        setTimeout(
+                          () => el.scrollIntoView({ behavior: "smooth", block: "center" }),
+                          350
+                        )
+                      }}
+                      onBlur={() => {
+                        setTimeout(() => {
+                          setKeyboardOpen(false)
+                          if (
+                            isLastVisible &&
+                            currentQuestion.otherSpecify &&
+                            answers[currentQuestion.id] === currentQuestion.otherSpecify.optionUuid
+                          ) {
+                            const need = currentQuestion.otherSpecify.required
+                            const spec = String(
+                              answers[currentQuestion.otherSpecify.answerKey] ?? ""
+                            ).trim()
+                            if (!need || spec) setShowFinishConfirm(true)
+                          }
+                        }, 150)
+                      }}
+                      placeholder="Укажите вариант..."
+                      rows={3}
+                      className="w-full p-3 text-sm border-2 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    />
+                  )}
               </div>
             )}
 
@@ -705,11 +830,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     <button
                       key={val}
                       onClick={() => handleAnswer(currentQuestion.id, val)}
-                      className={`w-10 h-10 rounded-lg border-2 text-sm font-semibold transition-colors ${
-                        answers[currentQuestion.id] === val
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "border-border hover:border-primary"
-                      }`}
+                      className={`w-10 h-10 rounded-lg border-2 text-sm font-semibold transition-colors ${answers[currentQuestion.id] === val
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "border-border hover:border-primary"
+                        }`}
                     >
                       {val}
                     </button>
