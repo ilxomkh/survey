@@ -483,7 +483,22 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   // Checkbox uchun uuid[] massivi saqlanadi
 
   const handleAnswer = (questionId: string, value: any) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: value }))
+    const newAnswers = { ...answers, [questionId]: value }
+    setAnswers(newAnswers)
+
+    // Синхронно считаем логику с новыми ответами — не ждём useEffect
+    if (logicEngine) {
+      const result = logicEngine.evaluate(newAnswers)
+      setLogicResult(result)
+
+      // Если JUMP_TO_PAGE сработал — сразу показываем завершение
+      if (result.jumpToPageUuid) {
+        setShowFinishConfirm(true)
+        return
+      }
+    }
+
+    // Последний вопрос и не text/number — предлагаем завершить
     if (
       isLastVisible &&
       currentQuestion?.id === questionId &&
