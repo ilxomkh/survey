@@ -773,19 +773,35 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const currentQuestion = visibleQuestions[currentQuestionIndex]
   const isLastVisible = currentQuestionIndex === visibleQuestions.length - 1
 
-  // ✅ ФИХ 6: Улучшенная валидация canGoNext
+  // «Далее» только после ответа на текущий вопрос (независимо от флага required в Tally)
   const canGoNext = (() => {
     if (!currentQuestion) return true
 
-    const baseAnswered = currentQuestion.required
-      ? answers[currentQuestion.id] !== undefined &&
-      answers[currentQuestion.id] !== "" &&
-      (Array.isArray(answers[currentQuestion.id])
-        ? answers[currentQuestion.id].length > 0
-        : true)
-      : true
+    const v = answers[currentQuestion.id]
+    let answered = false
+    switch (currentQuestion.type) {
+      case "multiple_choice":
+      case "dropdown":
+        answered = v !== undefined && v !== null && String(v).length > 0
+        break
+      case "checkbox":
+        answered = Array.isArray(v) && v.length > 0
+        break
+      case "linear_scale":
+      case "number":
+        answered = v !== undefined && v !== null && v !== ""
+        break
+      case "text":
+        answered = typeof v === "string" && v.trim().length > 0
+        break
+      case "yes_no":
+        answered = v === "yes" || v === "no"
+        break
+      default:
+        answered = v !== undefined && v !== null && v !== ""
+    }
 
-    if (!baseAnswered) return false
+    if (!answered) return false
 
     if (currentQuestion.otherOptionUuid && currentQuestion.otherInputGroupId) {
       const isOtherSelected =
@@ -1009,8 +1025,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                       key={val}
                       onClick={() => handleAnswer(currentQuestion.id, val)}
                       className={`w-10 h-10 rounded-lg border-2 text-sm font-semibold transition-colors ${answers[currentQuestion.id] === val
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "border-border hover:border-primary"
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "border-border hover:border-primary"
                         }`}
                     >
                       {val}
@@ -1104,14 +1120,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     Далее
                   </Button>
                 ) : (
-                  canGoNext && (
-                    <Button
-                      onClick={() => setShowFinishConfirm(true)}
-                      className="flex-1 h-10 text-sm bg-green-600 hover:bg-green-700 text-white"
-                    >
-                      Завершить опрос
-                    </Button>
-                  )
+                  <Button
+                    onClick={() => setShowFinishConfirm(true)}
+                    disabled={!canGoNext}
+                    className="flex-1 h-10 text-sm bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+                  >
+                    Завершить опрос
+                  </Button>
                 )}
               </div>
             )}
