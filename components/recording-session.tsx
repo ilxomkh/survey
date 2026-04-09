@@ -19,57 +19,6 @@ interface QuestionOption {
   text: string
 }
 
-/** Tally: «Другой» — опция + INPUT_TEXT/TEXTAREA в той же группе (MULTIPLE_CHOICE или CHECKBOXES) */
-interface OtherSpecifyMeta {
-  optionUuid: string
-  answerKey: string
-  required: boolean
-}
-
-function parseTallyOtherSpecify(
-  siblingBlocks: any[],
-  optionBlocks: any[],
-  options: QuestionOption[],
-  groupId: string,
-  optionType: "CHECKBOX" | "MULTIPLE_CHOICE_OPTION",
-  textSiblingGroupType: "CHECKBOXES" | "MULTIPLE_CHOICE"
-): OtherSpecifyMeta | undefined {
-  const otherTextBlock = siblingBlocks.find(
-    (b: any) =>
-      (b.type === "INPUT_TEXT" || b.type === "TEXTAREA") &&
-      (b.groupType === textSiblingGroupType || b.groupUuid === groupId)
-  )
-  if (!otherTextBlock) return undefined
-
-  const textIdx = siblingBlocks.indexOf(otherTextBlock)
-  const optionsBeforeText = siblingBlocks
-    .slice(0, textIdx)
-    .filter((b: any) => b.type === optionType)
-  const flagged = optionBlocks.find(
-    (b: any) => b.payload?.isOther === true || b.payload?.other === true
-  )
-  let otherOptionUuid =
-    flagged?.uuid ||
-    (optionsBeforeText.length > 0
-      ? optionsBeforeText[optionsBeforeText.length - 1].uuid
-      : undefined)
-  if (!otherOptionUuid) {
-    const byLabel = options.find((o) =>
-      /^(другой|другое|other|інше)\b/i.test(o.text.trim())
-    )
-    if (byLabel) otherOptionUuid = byLabel.uuid
-  }
-  if (!otherOptionUuid) return undefined
-
-  const g = otherTextBlock.groupUuid
-  const answerKey = g && g !== groupId ? g : otherTextBlock.uuid
-  return {
-    optionUuid: otherOptionUuid,
-    answerKey,
-    required: otherTextBlock.payload?.isRequired === true,
-  }
-}
-
 interface Question {
   id: string        // blockGroupUuid (input blok groupUuid) — answers kaliti va engine kaliti
   title: string
@@ -79,7 +28,8 @@ interface Question {
   scaleMin?: number
   scaleMax?: number
   multiple?: boolean
-  otherSpecify?: OtherSpecifyMeta
+  otherOptionUuid?: string    // "Другой" option uuid — checkbox uchun
+  otherInputGroupId?: string  // INPUT_TEXT groupUuid — "Другой" yozuvi uchun
 }
 
 interface RecordingSessionProps {
@@ -225,14 +175,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             }))
             .filter((o) => o.text)
           const groupId = optionBlocks[0]?.groupUuid || titleBlock.groupUuid
-          const otherSpecify = parseTallyOtherSpecify(
-            siblingBlocks,
-            optionBlocks,
-            options,
-            groupId,
-            "CHECKBOX",
-            "CHECKBOXES"
+
+          // "Другой" option — последний checkbox с lockInPlace обычно
+          // Ищем INPUT_TEXT в siblings (поле для ввода "другого")
+          const inputTextBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
+          const otherOptionBlock = optionBlocks.find(
+            (b: any) =>
+              b.payload?.lockInPlace?.length > 0 ||
+              (b.payload?.text || "").toLowerCase().includes("boshqa") ||
+              (b.payload?.text || "").toLowerCase().includes("другой") ||
+              (b.payload?.text || "").toLowerCase().includes("other")
           )
+
           return {
             id: groupId,
             title: questionText,
@@ -240,13 +194,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             options,
             multiple: true,
             required: titleBlock.payload?.isRequired === true,
-            otherSpecify,
+            otherOptionUuid: otherOptionBlock?.uuid,
+            otherInputGroupId: inputTextBlock?.groupUuid,
           }
         }
 
-        // MULTIPLE_CHOICE — single choice (faqat option bloklari; INPUT_TEXT "Другой" alohida)
+        // MULTIPLE_CHOICE — single choice
         const choiceOptionBlocks = siblingBlocks.filter(
-          (b: any) => b.type === "MULTIPLE_CHOICE_OPTION"
+          (b: any) => b.type === "MULTIPLE_CHOICE_OPTION" || b.groupType === "MULTIPLE_CHOICE"
         )
         if (choiceOptionBlocks.length > 0) {
           const options: QuestionOption[] = choiceOptionBlocks
@@ -255,24 +210,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
             }))
             .filter((o) => o.text)
+          // groupId = choice option larning groupUuid (barida bir xil)
           const groupId = choiceOptionBlocks[0]?.groupUuid || titleBlock.groupUuid
-
-          const otherSpecify = parseTallyOtherSpecify(
-            siblingBlocks,
-            choiceOptionBlocks,
-            options,
-            groupId,
-            "MULTIPLE_CHOICE_OPTION",
-            "MULTIPLE_CHOICE"
-          )
-
           return {
             id: groupId,
             title: questionText,
             type: "multiple_choice",
             options,
             required: titleBlock.payload?.isRequired === true,
-            otherSpecify,
           }
         }
 
@@ -500,25 +445,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         })
       }
 
-      for (const q of visibleQuestions) {
-        if (!q.otherSpecify) continue
-        if (q.type === "multiple_choice") {
-          if (answers[q.id] !== q.otherSpecify.optionUuid) continue
-        } else if (q.type === "checkbox") {
-          const arr = answers[q.id]
-          if (!Array.isArray(arr) || !arr.includes(q.otherSpecify.optionUuid)) continue
-        } else continue
-
-        if (q.otherSpecify.required) {
-          const spec = String(answers[q.otherSpecify.answerKey] ?? "").trim()
-          if (!spec) {
-            setError("Укажите текст для варианта «Другой»")
-            setLoading(false)
-            return
-          }
-        }
-      }
-
       // UUID → Text conversion для backend
       const surveyAnswersList = visibleQuestions
         .filter((q) => {
@@ -532,26 +458,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
           // uuid → text
           if (q.type === "multiple_choice" && q.options) {
-            const rawUuid = answers[q.id]
-            const found = q.options.find((o) => o.uuid === rawUuid)
+            const found = q.options.find((o) => o.uuid === value)
             value = found?.text ?? value
-            if (
-              q.otherSpecify &&
-              rawUuid === q.otherSpecify.optionUuid
-            ) {
-              const spec = String(answers[q.otherSpecify.answerKey] ?? "").trim()
-              if (spec) value = `${value}: ${spec}`
-            }
           }
           if (q.type === "checkbox" && q.options && Array.isArray(value)) {
             value = (value as string[]).map((uuid) => {
               const found = q.options!.find((o) => o.uuid === uuid)
-              let t = found?.text ?? uuid
-              if (q.otherSpecify && uuid === q.otherSpecify.optionUuid) {
-                const spec = String(answers[q.otherSpecify.answerKey] ?? "").trim()
-                if (spec) t = `${t}: ${spec}`
-              }
-              return t
+              return found?.text ?? uuid
             })
           }
           if (q.type === "dropdown" && q.options) {
@@ -585,11 +498,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   // MUHIM: multiple_choice va dropdown uchun uuid saqlanadi (text emas)
   // Checkbox uchun uuid[] massivi saqlanadi
 
-  const handleAnswer = (questionId: string, value: any, otherSpecify?: OtherSpecifyMeta) => {
+  const handleAnswer = (questionId: string, value: any) => {
     const newAnswers = { ...answers, [questionId]: value }
-    if (otherSpecify && value !== otherSpecify.optionUuid) {
-      delete newAnswers[otherSpecify.answerKey]
-    }
     setAnswers(newAnswers)
 
     // Синхронно считаем логику с новыми ответами — не ждём useEffect
@@ -611,36 +521,23 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       !["text", "number"].includes(currentQuestion?.type) &&
       value
     ) {
-      if (currentQuestion?.otherSpecify && currentQuestion.otherSpecify.required) {
-        const os = currentQuestion.otherSpecify
-        if (
-          currentQuestion.type === "multiple_choice" &&
-          value === os.optionUuid
-        ) {
-          const spec = String(newAnswers[os.answerKey] ?? "").trim()
-          if (!spec) return
-        }
-      }
       setShowFinishConfirm(true)
     }
   }
 
-  const handleCheckboxAnswer = (
-    questionId: string,
-    optionUuid: string,
-    otherSpecify?: OtherSpecifyMeta
-  ) => {
-    setAnswers((prev) => {
-      const current: string[] = Array.isArray(prev[questionId]) ? prev[questionId] : []
-      const updated = current.includes(optionUuid)
-        ? current.filter((o) => o !== optionUuid)
-        : [...current, optionUuid]
-      const next = { ...prev, [questionId]: updated }
-      if (otherSpecify && !updated.includes(otherSpecify.optionUuid)) {
-        delete next[otherSpecify.answerKey]
-      }
-      return next
-    })
+  const handleCheckboxAnswer = (questionId: string, optionUuid: string) => {
+    const current: string[] = Array.isArray(answers[questionId]) ? answers[questionId] : []
+    const updated = current.includes(optionUuid)
+      ? current.filter((o) => o !== optionUuid)
+      : [...current, optionUuid]
+    const newAnswers = { ...answers, [questionId]: updated }
+    setAnswers(newAnswers)
+
+    // Синхронно пересчитываем — SHOW/HIDE_BLOCKS сработают сразу
+    if (logicEngine) {
+      const result = logicEngine.evaluate(newAnswers)
+      setLogicResult(result)
+    }
   }
 
   // ─── Navigation ─────────────────────────────────────────────
@@ -649,23 +546,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   const canGoNext = currentQuestion
     ? currentQuestion.required
-      ? (() => {
-        const v = answers[currentQuestion.id]
-        if (v === undefined || v === "") return false
-        if (Array.isArray(v) && v.length === 0) return false
-        const os = currentQuestion.otherSpecify
-        if (os && os.required) {
-          const needSpec =
-            Array.isArray(v) && v.includes(os.optionUuid)
-              ? true
-              : v === os.optionUuid
-          if (needSpec) {
-            const spec = String(answers[os.answerKey] ?? "").trim()
-            if (!spec) return false
-          }
-        }
-        return true
-      })()
+      ? answers[currentQuestion.id] !== undefined &&
+        answers[currentQuestion.id] !== "" &&
+        (Array.isArray(answers[currentQuestion.id])
+          ? answers[currentQuestion.id].length > 0
+          : true)
       : true
     : true
 
@@ -712,7 +597,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         onClick={(e) => {
           const tag = (e.target as HTMLElement).tagName
           if (!["INPUT", "TEXTAREA", "BUTTON", "LABEL", "SELECT"].includes(tag)) {
-            ; (document.activeElement as HTMLElement)?.blur()
+            ;(document.activeElement as HTMLElement)?.blur()
           }
         }}
       >
@@ -769,9 +654,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                       name={`question-${currentQuestion.id}`}
                       value={option.uuid}
                       checked={answers[currentQuestion.id] === option.uuid}
-                      onChange={() =>
-                        handleAnswer(currentQuestion.id, option.uuid, currentQuestion.otherSpecify)
-                      }
+                      onChange={() => handleAnswer(currentQuestion.id, option.uuid)}
                       className="w-4 h-4 text-primary flex-shrink-0"
                     />
                     <span className="flex-1 text-sm break-words">{option.text}</span>
@@ -780,45 +663,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     )}
                   </label>
                 ))}
-                {currentQuestion.otherSpecify &&
-                  answers[currentQuestion.id] === currentQuestion.otherSpecify.optionUuid && (
-                    <textarea
-                      value={answers[currentQuestion.otherSpecify.answerKey] || ""}
-                      onChange={(e) =>
-                        setAnswers((prev) => ({
-                          ...prev,
-                          [currentQuestion.otherSpecify!.answerKey]: e.target.value,
-                        }))
-                      }
-                      onFocus={(e) => {
-                        setKeyboardOpen(true)
-                        const el = e.currentTarget
-                        setTimeout(
-                          () => el.scrollIntoView({ behavior: "smooth", block: "center" }),
-                          350
-                        )
-                      }}
-                      onBlur={() => {
-                        setTimeout(() => {
-                          setKeyboardOpen(false)
-                          if (
-                            isLastVisible &&
-                            currentQuestion.otherSpecify &&
-                            answers[currentQuestion.id] === currentQuestion.otherSpecify.optionUuid
-                          ) {
-                            const need = currentQuestion.otherSpecify.required
-                            const spec = String(
-                              answers[currentQuestion.otherSpecify.answerKey] ?? ""
-                            ).trim()
-                            if (!need || spec) setShowFinishConfirm(true)
-                          }
-                        }, 150)
-                      }}
-                      placeholder="Укажите вариант..."
-                      rows={3}
-                      className="w-full p-3 text-sm border-2 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                    />
-                  )}
               </div>
             )}
 
@@ -846,58 +690,40 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     ? answers[currentQuestion.id]
                     : []
                   const isChecked = selected.includes(option.uuid)
+                  const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
                   return (
-                    <label
-                      key={option.uuid}
-                      className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
-                      style={{ borderColor: isChecked ? "hsl(var(--primary))" : undefined }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() =>
-                          handleCheckboxAnswer(
-                            currentQuestion.id,
-                            option.uuid,
-                            currentQuestion.otherSpecify
-                          )
-                        }
-                        className="w-4 h-4 text-primary flex-shrink-0"
-                      />
-                      <span className="flex-1 text-sm break-words">{option.text}</span>
-                      {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
-                    </label>
+                    <div key={option.uuid}>
+                      <label
+                        className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
+                        style={{ borderColor: isChecked ? "hsl(var(--primary))" : undefined }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleCheckboxAnswer(currentQuestion.id, option.uuid)}
+                          className="w-4 h-4 text-primary flex-shrink-0"
+                        />
+                        <span className="flex-1 text-sm break-words">{option.text}</span>
+                        {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
+                      </label>
+                      {/* "Другой" — inline текстовое поле */}
+                      {isOtherOption && isChecked && currentQuestion.otherInputGroupId && (
+                        <input
+                          type="text"
+                          value={answers[currentQuestion.otherInputGroupId!] || ""}
+                          onChange={(e) =>
+                            setAnswers((prev) => ({
+                              ...prev,
+                              [currentQuestion.otherInputGroupId!]: e.target.value,
+                            }))
+                          }
+                          placeholder="Напишите ответ респондента"
+                          className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        />
+                      )}
+                    </div>
                   )
                 })}
-                {currentQuestion.otherSpecify &&
-                  Array.isArray(answers[currentQuestion.id]) &&
-                  (answers[currentQuestion.id] as string[]).includes(
-                    currentQuestion.otherSpecify.optionUuid
-                  ) && (
-                    <textarea
-                      value={answers[currentQuestion.otherSpecify.answerKey] || ""}
-                      onChange={(e) =>
-                        setAnswers((prev) => ({
-                          ...prev,
-                          [currentQuestion.otherSpecify!.answerKey]: e.target.value,
-                        }))
-                      }
-                      onFocus={(e) => {
-                        setKeyboardOpen(true)
-                        const el = e.currentTarget
-                        setTimeout(
-                          () => el.scrollIntoView({ behavior: "smooth", block: "center" }),
-                          350
-                        )
-                      }}
-                      onBlur={() => {
-                        setTimeout(() => setKeyboardOpen(false), 150)
-                      }}
-                      placeholder="Укажите вариант..."
-                      rows={3}
-                      className="w-full p-3 text-sm border-2 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                    />
-                  )}
               </div>
             )}
 
@@ -917,10 +743,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     <button
                       key={val}
                       onClick={() => handleAnswer(currentQuestion.id, val)}
-                      className={`w-10 h-10 rounded-lg border-2 text-sm font-semibold transition-colors ${answers[currentQuestion.id] === val
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "border-border hover:border-primary"
-                        }`}
+                      className={`w-10 h-10 rounded-lg border-2 text-sm font-semibold transition-colors ${
+                        answers[currentQuestion.id] === val
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "border-border hover:border-primary"
+                      }`}
                     >
                       {val}
                     </button>
