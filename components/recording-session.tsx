@@ -64,7 +64,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const locationIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const lastPositionRef = useRef<GeolocationCoordinates | null>(null)
-  const questionsRef = useRef<Question[]>([])
 
   // ─── Answers o'zgarganda logic qayta hisoblash ──────────────
   useEffect(() => {
@@ -108,7 +107,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       .trim()
   }
 
-  // ✅ Рендер safeHTMLSchema — ВСЕ скобки красным
+  // ✅ ФИХ 1: Рендер safeHTMLSchema — ВСЕ скобки красным
   const renderSchema = (schema: any): React.ReactNode => {
     if (!schema || !Array.isArray(schema)) return null
 
@@ -153,6 +152,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             const fragColor = fragStyles
               .find((s: any, idx: number, arr: any[]) => arr[idx - 1] === "color")
             
+            // ✅ ПРИОРИТЕТ: если есть цвет в фрагменте — используем его
+            // если нет — используем цвет группы (красный для скобок)
             const finalColor = fragColor || groupColor
             
             return (
@@ -329,13 +330,68 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       .filter((q) => q.title.trim().length > 0)
   }
 
-  // ✅ Динамическая инъекция опций из Q2 в Q3
+  // ─── Загрузка вопросов ──────────────────────────────────────
+  useEffect(() => {
+    const loadQuestions = async () => {
+      try {
+        const token = localStorage.getItem("auth_token")
+        if (token) apiClient.setToken(token)
+
+        const surveyData = await apiClient.getSurveyQuestions(survey.id, sessionId)
+
+        let extractedQuestions: Question[] = []
+        let rawBlocks: any[] = []
+
+        if (surveyData) {
+          if (Array.isArray(surveyData.blocks)) {
+            rawBlocks = surveyData.blocks
+            extractedQuestions = parseTallyBlocks(rawBlocks)
+          } else if (Array.isArray(surveyData.questions)) {
+            extractedQuestions = surveyData.questions
+          } else if (Array.isArray(surveyData)) {
+            extractedQuestions = surveyData
+          } else {
+            for (const field of ["data", "items", "results", "content"]) {
+              if (Array.isArray((surveyData as any)[field])) {
+                extractedQuestions = (surveyData as any)[field]
+                break
+              }
+            }
+          }
+        }
+
+        // ✅ ФИХ 2: Добавляем динамические опции в Q3
+        extractedQuestions = injectDynamicOptions(extractedQuestions)
+
+        setQuestions(extractedQuestions)
+
+        if (rawBlocks.length > 0) {
+          const engine = buildLogicEngine(rawBlocks)
+          setLogicEngine(engine)
+
+          console.log("[DEBUG] Questions parsed:", extractedQuestions.map(q => ({
+            id: q.id,
+            title: q.title.slice(0, 40),
+            type: q.type,
+          })))
+          console.log("[DEBUG] Engine rules count:", engine.rules.length)
+        }
+      } catch (err) {
+        console.error("[RecordingSession] Ошибка загрузки вопросов:", err)
+      } finally {
+        setLoadingQuestions(false)
+      }
+    }
+
+    loadQuestions()
+  }, [survey.id, sessionId])
+
+  // ✅ ФИХ 3: Динамическая инъекция опций из Q2 в Q3
   const injectDynamicOptions = (questions: Question[]): Question[] => {
     // Находим Q2 (checkbox с маркетплейсами)
     const q2 = questions.find(q => 
       q.type === "checkbox" && 
-      q.title.toLowerCase().includes("какими онлайн-маркетплейсами") &&
-      q.options && q.options.length > 0
+      q.title.toLowerCase().includes("какими онлайн-маркетплейсами")
     )
     
     // Находим Q3 (multiple choice "чаще всего")
@@ -344,21 +400,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       q.title.toLowerCase().includes("чаще всего")
     )
 
-    if (!q2 || q3Index === -1 || !q2.otherInputGroupId) {
-      console.log("[DEBUG] Injection skipped:", { 
-        hasQ2: !!q2, 
-        q3Index, 
-        otherInputGroupId: q2?.otherInputGroupId 
-      })
-      return questions
-    }
+    if (!q2 || q3Index === -1 || !q2.otherInputGroupId) return questions
 
     const q3 = questions[q3Index]
     
     // Получаем ответ на "Другой" из Q2
     const otherText = answers[q2.otherInputGroupId]
-    
-    console.log("[DEBUG] Other text from Q2:", otherText)
     
     if (otherText && String(otherText).trim()) {
       // Создаём временный UUID для динамической опции
@@ -369,12 +416,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       
       if (!alreadyExists && q3.options) {
         // Находим "Другой" в Q3 и вставляем перед ним
-        const otherIndex = q3.options.findIndex(o => 
-          o.text.toLowerCase().includes("другой") ||
-          o.text.toLowerCase().includes("boshqa") ||
-          o.text.toLowerCase().includes("other")
-        )
-        const insertIndex = otherIndex >= 0 ? otherIndex : q3.options.length
+        const otherIndex = q3.options.findIndex(o => o.uuid === q3.otherOptionUuid)
+        const insertIndex = otherIndex >= 0 ? otherIndex : q3.options.length - 1
         
         const updatedOptions = [...q3.options]
         updatedOptions.splice(insertIndex, 0, {
@@ -382,22 +425,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           text: String(otherText).trim()
         })
         
-        console.log("[DEBUG] Injected option:", String(otherText).trim())
-        
-        const updatedQuestions = [...questions]
-        updatedQuestions[q3Index] = {
+        questions[q3Index] = {
           ...q3,
           options: updatedOptions
         }
-        
-        return updatedQuestions
       }
     }
 
     return questions
   }
 
-  // ✅ Замена @упоминаний на реальные значения в заголовках
+  // ✅ ФИХ 4: Замена @упоминаний на реальные значения в заголовках
   const replaceSchemaPlaceholders = (schema: any, answersMap: Answers): any => {
     if (!schema || !Array.isArray(schema)) return schema
 
@@ -459,100 +497,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     })
   }
 
-  // ✅ Рендер с заменой @упоминаний
+  // ✅ ФИХ 5: Рендер с заменой @упоминаний
   const renderSchemaWithReplacements = (schema: any): React.ReactNode => {
     const replacedSchema = replaceSchemaPlaceholders(schema, answers)
     return renderSchema(replacedSchema)
   }
-
-  // ─── Загрузка вопросов ──────────────────────────────────────
-  useEffect(() => {
-    const loadQuestions = async () => {
-      try {
-        const token = localStorage.getItem("auth_token")
-        if (token) apiClient.setToken(token)
-
-        const surveyData = await apiClient.getSurveyQuestions(survey.id, sessionId)
-
-        let extractedQuestions: Question[] = []
-        let rawBlocks: any[] = []
-
-        if (surveyData) {
-          if (Array.isArray(surveyData.blocks)) {
-            rawBlocks = surveyData.blocks
-            extractedQuestions = parseTallyBlocks(rawBlocks)
-          } else if (Array.isArray(surveyData.questions)) {
-            extractedQuestions = surveyData.questions
-          } else if (Array.isArray(surveyData)) {
-            extractedQuestions = surveyData
-          } else {
-            for (const field of ["data", "items", "results", "content"]) {
-              if (Array.isArray((surveyData as any)[field])) {
-                extractedQuestions = (surveyData as any)[field]
-                break
-              }
-            }
-          }
-        }
-
-        setQuestions(extractedQuestions)
-        questionsRef.current = extractedQuestions
-
-        if (rawBlocks.length > 0) {
-          const engine = buildLogicEngine(rawBlocks)
-          setLogicEngine(engine)
-
-          console.log("[DEBUG] Questions parsed:", extractedQuestions.map(q => ({
-            id: q.id,
-            title: q.title.slice(0, 40),
-            type: q.type,
-          })))
-          console.log("[DEBUG] Engine rules count:", engine.rules.length)
-        }
-      } catch (err) {
-        console.error("[RecordingSession] Ошибка загрузки вопросов:", err)
-      } finally {
-        setLoadingQuestions(false)
-      }
-    }
-
-    loadQuestions()
-  }, [survey.id, sessionId])
-
-  // ✅ Динамическая инъекция при изменении answers
-  useEffect(() => {
-    if (questions.length === 0) return
-    
-    const q2 = questions.find(q => 
-      q.type === "checkbox" && 
-      q.title.toLowerCase().includes("какими онлайн-маркетплейсами")
-    )
-    
-    if (!q2?.otherInputGroupId) return
-    
-    const otherText = answers[q2.otherInputGroupId]
-    
-    if (otherText && String(otherText).trim()) {
-      const updated = injectDynamicOptions(questions)
-      
-      // Избегаем бесконечного цикла - проверяем реальные изменения
-      const q3Index = updated.findIndex(q => 
-        q.type === "multiple_choice" && 
-        q.title.toLowerCase().includes("чаще всего")
-      )
-      
-      if (q3Index !== -1) {
-        const prevQ3 = questionsRef.current[q3Index]
-        const currQ3 = updated[q3Index]
-        
-        if (prevQ3?.options?.length !== currQ3?.options?.length) {
-          console.log("[DEBUG] Updating questions with injected option")
-          questionsRef.current = updated
-          setQuestions(updated)
-        }
-      }
-    }
-  }, [answers])
 
   // ─── Инициализация записи и геолокации ─────────────────────
   useEffect(() => {
@@ -803,6 +752,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const currentQuestion = visibleQuestions[currentQuestionIndex]
   const isLastVisible = currentQuestionIndex === visibleQuestions.length - 1
 
+  // ✅ ФИХ 6: Улучшенная валидация canGoNext
   const canGoNext = (() => {
     if (!currentQuestion) return true
 
@@ -833,6 +783,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   })()
 
   const handleNext = () => {
+    // ✅ ФИХ 7: Блокировка если нет ответа
     if (!canGoNext) return
 
     if (logicResult.jumpToPageUuid) {
@@ -905,6 +856,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           </p>
         ) : currentQuestion ? (
           <div className="space-y-4">
+            {/* ✅ ФИХ 8: Заголовок с заменой @упоминаний */}
             <h3 className="font-medium text-base leading-snug">
               {currentQuestion.rawSchema
                 ? renderSchemaWithReplacements(currentQuestion.rawSchema)
