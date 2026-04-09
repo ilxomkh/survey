@@ -99,7 +99,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             ? String(answers[q2.otherInputGroupId] ?? "").trim()
             : ""
         const otherLabel =
-          q2.options?.find((o) => o.uuid === uuid)?.text ?? "Другой" && "Boshqa" && "Other"
+          q2.options?.find((o) => o.uuid === uuid)?.text?.trim() || "Другой"
         newOptions.push({ uuid, text: custom || otherLabel })
       } else {
         const opt = q2.options?.find((o) => o.uuid === uuid)
