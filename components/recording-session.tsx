@@ -19,6 +19,7 @@ import { buildLogicEngine, TallyLogicEngine, LogicResult, Answers } from "@/lib/
 interface Survey {
   id: number
   title: string
+  description?: string
 }
 
 interface QuestionOption {
@@ -962,10 +963,15 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }}
       >
-        <div className="mb-4">
-          <h2 className="font-semibold text-base sm:text-lg">{survey.title}</h2>
+        <div className="mb-4 min-w-0">
+          <h2 className="font-semibold text-base sm:text-lg break-words">{survey.title}</h2>
+          {survey.description?.trim() && (
+            <p className="text-sm text-muted-foreground mt-2 break-words whitespace-pre-wrap leading-relaxed">
+              {survey.description}
+            </p>
+          )}
           {visibleQuestions.length > 0 && (
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-xs text-muted-foreground mt-2">
               Вопрос {currentQuestionIndex + 1} из {visibleQuestions.length}
             </p>
           )}

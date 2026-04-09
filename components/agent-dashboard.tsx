@@ -108,19 +108,22 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
             {surveys.map((survey) => (
               <Card
                 key={survey.id}
-                className={`border transition-all duration-200 ${
-                  survey.is_active
+                className={`border transition-all duration-200 ${survey.is_active
                     ? "border-primary/20 hover:border-primary/50 hover:shadow-md hover:shadow-primary/10 cursor-pointer"
                     : "border-border opacity-60"
-                }`}
+                  }`}
                 onClick={() => survey.is_active && setSelectedSurvey(survey)}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <CardTitle className="text-base font-semibold leading-snug">{survey.title}</CardTitle>
-                      {survey.description && (
-                        <CardDescription className="mt-1 text-sm line-clamp-2">{survey.description}</CardDescription>
+                      <CardTitle className="text-base font-semibold leading-snug break-words">
+                        {survey.title}
+                      </CardTitle>
+                      {survey.description?.trim() && (
+                        <CardDescription className="mt-1.5 text-sm break-words whitespace-pre-wrap leading-relaxed text-muted-foreground">
+                          {survey.description}
+                        </CardDescription>
                       )}
                     </div>
                     {!survey.is_active && (

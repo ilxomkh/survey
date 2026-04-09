@@ -1,7 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -13,6 +19,7 @@ import { storage } from "@/lib/storage"
 interface Survey {
   id: number
   title: string
+  description?: string
 }
 
 interface PreparationModalProps {
@@ -93,9 +100,16 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-sm border-primary/20">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-semibold">{survey.title}</DialogTitle>
+      <DialogContent className="max-h-[min(90dvh,720px)] w-full max-w-sm sm:max-w-md border-primary/20 overflow-y-auto overflow-x-hidden">
+        <DialogHeader className="space-y-2 text-left">
+          <DialogTitle className="text-lg font-semibold leading-snug break-words pr-6">
+            {survey.title}
+          </DialogTitle>
+          {survey.description?.trim() && (
+            <DialogDescription className="break-words whitespace-pre-wrap leading-relaxed text-left">
+              {survey.description}
+            </DialogDescription>
+          )}
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">Перед началом убедитесь, что всё готово:</p>
