@@ -564,15 +564,36 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const currentQuestion = visibleQuestions[currentQuestionIndex]
   const isLastVisible = currentQuestionIndex === visibleQuestions.length - 1
 
-  const canGoNext = currentQuestion
-    ? currentQuestion.required
+  const canGoNext = (() => {
+    if (!currentQuestion) return true
+
+    // Базовая проверка — ответ дан
+    const baseAnswered = currentQuestion.required
       ? answers[currentQuestion.id] !== undefined &&
         answers[currentQuestion.id] !== "" &&
         (Array.isArray(answers[currentQuestion.id])
           ? answers[currentQuestion.id].length > 0
           : true)
       : true
-    : true
+
+    if (!baseAnswered) return false
+
+    // Если выбран "Другой" и есть поле ввода — оно должно быть заполнено
+    if (currentQuestion.otherOptionUuid && currentQuestion.otherInputGroupId) {
+      const isOtherSelected =
+        currentQuestion.type === "multiple_choice"
+          ? answers[currentQuestion.id] === currentQuestion.otherOptionUuid
+          : Array.isArray(answers[currentQuestion.id]) &&
+            answers[currentQuestion.id].includes(currentQuestion.otherOptionUuid)
+
+      if (isOtherSelected) {
+        const otherText = answers[currentQuestion.otherInputGroupId]
+        if (!otherText || String(otherText).trim() === "") return false
+      }
+    }
+
+    return true
+  })()
 
   const handleNext = () => {
     // JUMP_TO_PAGE triggered — oprosni tugatish
