@@ -38,6 +38,65 @@ interface RecordingSessionProps {
   onComplete: () => void
 }
 
+/** Заголовок Q2 (маркетплейсы): русский + типичная узбекская латиница в Tally */
+const Q2_MARKETPLACE_TITLE_FRAGMENTS = [
+  "какими онлайн-маркетплейсами",
+  "онлайн-маркетплейс",
+  "marketpleys",
+  "marketpley",
+  "onlayn market",
+  "qaysi onlayn",
+] as const
+
+/** Заголовок Q3 («чаще всего»): русский + узбекские формулировки */
+const Q3_FREQUENCY_TITLE_FRAGMENTS = [
+  "чаще всего",
+  "eng ko'p",
+  "eng ko`p",
+  "ko'proq",
+  "ko`proq",
+  "koproq",
+] as const
+
+function titleMatchesAnyFragment(title: string, fragments: readonly string[]): boolean {
+  const t = title.toLowerCase()
+  return fragments.some((f) => t.includes(f.toLowerCase()))
+}
+
+/** Q2: по тексту вопроса или единственный чекбокс с полем «другой» и несколькими вариантами */
+function resolveMarketplaceQ2(questions: Question[]): Question | undefined {
+  const byTitle = questions.find(
+    (q) =>
+      q.type === "checkbox" &&
+      titleMatchesAnyFragment(q.title, Q2_MARKETPLACE_TITLE_FRAGMENTS)
+  )
+  if (byTitle) return byTitle
+
+  const withOther = questions.filter(
+    (q) =>
+      q.type === "checkbox" &&
+      q.otherOptionUuid &&
+      q.otherInputGroupId &&
+      (q.options?.length ?? 0) >= 3
+  )
+  if (withOther.length === 1) return withOther[0]
+  return undefined
+}
+
+/** Индекс Q3: первый multiple_choice после Q2, иначе по заголовку */
+function resolveFrequencyQ3Index(questions: Question[], q2: Question | undefined): number {
+  if (q2) {
+    const i2 = questions.indexOf(q2)
+    const after = questions.findIndex((q, i) => i > i2 && q.type === "multiple_choice")
+    if (after >= 0) return after
+  }
+  return questions.findIndex(
+    (q) =>
+      q.type === "multiple_choice" &&
+      titleMatchesAnyFragment(q.title, Q3_FREQUENCY_TITLE_FRAGMENTS)
+  )
+}
+
 export function RecordingSession({ sessionId, survey, onComplete }: RecordingSessionProps) {
   const [isRecording, setIsRecording] = useState(false)
   const [duration, setDuration] = useState(0)
@@ -74,16 +133,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   // ─── Q3: только выбранные в Q2; «Другой» → текст респондента ─
   const questionsResolved = useMemo(() => {
-    const q2 = questions.find(
-      (q) =>
-        q.type === "checkbox" &&
-        q.title.toLowerCase().includes("какими онлайн-маркетплейсами")
-    )
-    const q3Index = questions.findIndex(
-      (q) =>
-        q.type === "multiple_choice" &&
-        q.title.toLowerCase().includes("чаще всего")
-    )
+    const q2 = resolveMarketplaceQ2(questions)
+    const q3Index = resolveFrequencyQ3Index(questions, q2)
     if (!q2 || q3Index === -1) return questions
 
     const selected = answers[q2.id]
@@ -434,16 +485,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   // Сброс ответа Q3, если соответствующий вариант снят в Q2
   useEffect(() => {
-    const q2 = questions.find(
-      (q) =>
-        q.type === "checkbox" &&
-        q.title.toLowerCase().includes("какими онлайн-маркетплейсами")
-    )
-    const q3 = questions.find(
-      (q) =>
-        q.type === "multiple_choice" &&
-        q.title.toLowerCase().includes("чаще всего")
-    )
+    const q2 = resolveMarketplaceQ2(questions)
+    const q3Index = resolveFrequencyQ3Index(questions, q2)
+    const q3 = q3Index >= 0 ? questions[q3Index] : undefined
     if (!q2 || !q3) return
     const selected = answers[q2.id]
     const q3ans = answers[q3.id]
@@ -465,16 +509,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const replaceSchemaPlaceholders = (schema: any, answersMap: Answers): any => {
     if (!schema || !Array.isArray(schema)) return schema
 
-    const q2Market = questions.find(
-      (q) =>
-        q.type === "checkbox" &&
-        q.title.toLowerCase().includes("какими онлайн-маркетплейсами")
-    )
-    const q3Freq = questions.find(
-      (q) =>
-        q.type === "multiple_choice" &&
-        q.title.toLowerCase().includes("чаще всего")
-    )
+    const q2Market = resolveMarketplaceQ2(questions)
+    const q3Idx = resolveFrequencyQ3Index(questions, q2Market)
+    const q3Freq = q3Idx >= 0 ? questions[q3Idx] : undefined
     let otherMentionText: string | null = null
     if (q2Market?.otherInputGroupId) {
       const t = answersMap[q2Market.otherInputGroupId]
