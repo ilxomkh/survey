@@ -17,6 +17,7 @@ interface Survey {
 interface QuestionOption {
   uuid: string
   text: string
+  groupUuid?: string  // groupUuid option bloki — HIDE_BLOCKS uchun
 }
 
 interface Question {
@@ -80,11 +81,30 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   // ─── Парсинг блоков Tally ───────────────────────────────────
   const extractTextFromSchema = (schema: any): string => {
-    if (!schema || !Array.isArray(schema)) return ""
+    if (!schema) return ""
+    if (typeof schema === "string") return schema
+    if (!Array.isArray(schema)) return ""
+
     return schema
-      .map((item: any) => {
+      .map((item: any): string => {
         if (typeof item === "string") return item
-        if (Array.isArray(item) && item.length > 0 && typeof item[0] === "string") return item[0]
+        if (!Array.isArray(item)) return ""
+
+        // Структура: [текст_или_массив, ...стили]
+        // item[0] может быть: строка, или массив [[текст, стили], ...]
+        const first = item[0]
+        if (typeof first === "string") return first
+
+        // item[0] — вложенный массив фрагментов [[текст, стили], ...]
+        if (Array.isArray(first)) {
+          return first
+            .map((fragment: any) => {
+              if (typeof fragment === "string") return fragment
+              if (Array.isArray(fragment) && typeof fragment[0] === "string") return fragment[0]
+              return ""
+            })
+            .join("")
+        }
         return ""
       })
       .filter(Boolean)
@@ -171,6 +191,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const options: QuestionOption[] = optionBlocks
             .map((b: any) => ({
               uuid: b.uuid,
+              groupUuid: b.groupUuid,
               text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
             }))
             .filter((o) => o.text)
@@ -210,6 +231,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const options: QuestionOption[] = choiceOptionBlocks
             .map((b: any) => ({
               uuid: b.uuid,
+              groupUuid: b.groupUuid,
               text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
             }))
             .filter((o) => o.text)
@@ -679,7 +701,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             {/* MULTIPLE_CHOICE — uuid saqlanadi, text ko'rsatiladi */}
             {currentQuestion.type === "multiple_choice" && currentQuestion.options && (
               <div className="space-y-2">
-                {currentQuestion.options.map((option) => {
+                {currentQuestion.options
+                  .filter((option) =>
+                    !option.groupUuid || !logicResult.hiddenGroupUuids.has(option.groupUuid)
+                  )
+                  .map((option) => {
                   const isSelected = answers[currentQuestion.id] === option.uuid
                   const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
                   return (
@@ -743,7 +769,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             {/* CHECKBOX — uuid[] saqlanadi */}
             {currentQuestion.type === "checkbox" && currentQuestion.options && (
               <div className="space-y-2">
-                {currentQuestion.options.map((option) => {
+                {currentQuestion.options
+                  .filter((option) =>
+                    !option.groupUuid || !logicResult.hiddenGroupUuids.has(option.groupUuid)
+                  )
+                  .map((option) => {
                   const selected: string[] = Array.isArray(answers[currentQuestion.id])
                     ? answers[currentQuestion.id]
                     : []
