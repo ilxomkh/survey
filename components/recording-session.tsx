@@ -17,12 +17,12 @@ interface Survey {
 interface QuestionOption {
   uuid: string
   text: string
-  groupUuid?: string  // groupUuid option bloki — HIDE_BLOCKS uchun
 }
 
 interface Question {
   id: string        // blockGroupUuid (input blok groupUuid) — answers kaliti va engine kaliti
   title: string
+  rawSchema?: any   // oригинальный safeHTMLSchema для цветного рендера
   type: string
   options?: QuestionOption[]
   required?: boolean
@@ -112,6 +112,70 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       .trim()
   }
 
+  // Рендер safeHTMLSchema с цветами (красный текст подсказок)
+  const renderSchema = (schema: any): React.ReactNode => {
+    if (!schema || !Array.isArray(schema)) return null
+
+    const nodes: React.ReactNode[] = []
+
+    schema.forEach((item: any, i: number) => {
+      if (typeof item === "string") {
+        nodes.push(<span key={i}>{item}</span>)
+        return
+      }
+      if (!Array.isArray(item)) return
+
+      const first = item[0]
+
+      // Простая строка с возможными стилями: ["текст", [["color","red"],...]]
+      if (typeof first === "string") {
+        const styleArr = item.slice(1)
+        const color = styleArr
+          .flat(2)
+          .find((s: any, idx: number, arr: any[]) => arr[idx - 1] === "color")
+        nodes.push(
+          <span key={i} style={color ? { color } : undefined}>
+            {first}
+          </span>
+        )
+        return
+      }
+
+      // Вложенный массив фрагментов: [[["текст", стили], ...], [стили группы...]]
+      if (Array.isArray(first)) {
+        // Стили группы (второй элемент item)
+        const groupStyleArr: any[] = Array.isArray(item[1]) ? item[1] : []
+        const groupColor = groupStyleArr
+          .flat(2)
+          .find((s: any, idx: number, arr: any[]) => arr[idx - 1] === "color")
+
+        const inner = first.map((fragment: any, j: number) => {
+          if (typeof fragment === "string") {
+            return <span key={j}>{fragment}</span>
+          }
+          if (Array.isArray(fragment)) {
+            const text = fragment[0]
+            if (typeof text !== "string") return null
+            // Стили фрагмента: [["tag","span"],["color","rgb(...)"]]
+            const fragStyles: any[] = fragment.slice(1).flat(1)
+            const fragColor = fragStyles
+              .find((s: any, idx: number, arr: any[]) => arr[idx - 1] === "color")
+            const finalColor = fragColor || groupColor
+            return (
+              <span key={j} style={finalColor ? { color: finalColor } : undefined}>
+                {text}
+              </span>
+            )
+          }
+          return null
+        })
+        nodes.push(<span key={i}>{inner}</span>)
+      }
+    })
+
+    return <>{nodes}</>
+  }
+
   const parseTallyBlocks = (blocks: any[]): Question[] => {
     // CONDITIONAL_LOGIC bu yerda skip QILINMAYDI — engine uchun kerak
     // Faqat UI uchun keraksiz turlar o'tkazib yuboriladi
@@ -128,6 +192,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           titleBlock.payload?.title ||
           titleBlock.text ||
           ""
+        const rawSchema = titleBlock.payload?.safeHTMLSchema || null
 
         const titleBlockIndex = blocks.indexOf(titleBlock)
         const nextTitleBlockIndex =
@@ -147,6 +212,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           return {
             id: groupId,
             title: questionText,
+            rawSchema,
             type: "linear_scale",
             scaleMin: scaleBlock?.payload?.startValue ?? scaleBlock?.payload?.start ?? 0,
             scaleMax: scaleBlock?.payload?.endValue ?? scaleBlock?.payload?.end ?? 10,
@@ -161,6 +227,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           return {
             id: groupId,
             title: questionText,
+            rawSchema,
             type: "number",
             required: titleBlock.payload?.isRequired === true,
           }
@@ -179,6 +246,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           return {
             id: groupId,
             title: questionText,
+            rawSchema,
             type: "dropdown",
             options,
             required: titleBlock.payload?.isRequired === true,
@@ -191,7 +259,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const options: QuestionOption[] = optionBlocks
             .map((b: any) => ({
               uuid: b.uuid,
-              groupUuid: b.groupUuid,
               text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
             }))
             .filter((o) => o.text)
@@ -214,6 +281,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           return {
             id: groupId,
             title: questionText,
+            rawSchema,
             type: "checkbox",
             options,
             multiple: true,
@@ -231,7 +299,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const options: QuestionOption[] = choiceOptionBlocks
             .map((b: any) => ({
               uuid: b.uuid,
-              groupUuid: b.groupUuid,
               text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
             }))
             .filter((o) => o.text)
@@ -250,6 +317,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           return {
             id: groupId,
             title: questionText,
+            rawSchema,
             type: "multiple_choice",
             options,
             required: titleBlock.payload?.isRequired === true,
@@ -263,6 +331,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           return {
             id: titleBlock.groupUuid,
             title: questionText,
+            rawSchema,
             type: "yes_no",
             required: titleBlock.payload?.isRequired === true,
           }
@@ -692,9 +761,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           </p>
         ) : currentQuestion ? (
           <div className="space-y-4">
-            {/* Текст вопроса */}
+            {/* Текст вопроса с цветами */}
             <h3 className="font-medium text-base leading-snug">
-              {currentQuestion.title}
+              {currentQuestion.rawSchema
+                ? renderSchema(currentQuestion.rawSchema)
+                : currentQuestion.title}
               {currentQuestion.required && <span className="text-red-500 ml-1">*</span>}
             </h3>
 
@@ -702,9 +773,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             {currentQuestion.type === "multiple_choice" && currentQuestion.options && (
               <div className="space-y-2">
                 {currentQuestion.options
-                  .filter((option) =>
-                    !option.groupUuid || !logicResult.hiddenGroupUuids.has(option.groupUuid)
-                  )
+                  .filter((option) => !logicResult.hiddenGroupUuids.has(option.uuid))
                   .map((option) => {
                   const isSelected = answers[currentQuestion.id] === option.uuid
                   const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
@@ -770,9 +839,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             {currentQuestion.type === "checkbox" && currentQuestion.options && (
               <div className="space-y-2">
                 {currentQuestion.options
-                  .filter((option) =>
-                    !option.groupUuid || !logicResult.hiddenGroupUuids.has(option.groupUuid)
-                  )
+                  .filter((option) => !logicResult.hiddenGroupUuids.has(option.uuid))
                   .map((option) => {
                   const selected: string[] = Array.isArray(answers[currentQuestion.id])
                     ? answers[currentQuestion.id]
