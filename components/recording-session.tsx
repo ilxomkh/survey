@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -72,8 +72,57 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     setLogicResult(result)
   }, [answers, logicEngine])
 
+  // ─── Q3: только выбранные в Q2; «Другой» → текст респондента ─
+  const questionsResolved = useMemo(() => {
+    const q2 = questions.find(
+      (q) =>
+        q.type === "checkbox" &&
+        q.title.toLowerCase().includes("какими онлайн-маркетплейсами")
+    )
+    const q3Index = questions.findIndex(
+      (q) =>
+        q.type === "multiple_choice" &&
+        q.title.toLowerCase().includes("чаще всего")
+    )
+    if (!q2 || q3Index === -1) return questions
+
+    const selected = answers[q2.id]
+    if (!Array.isArray(selected) || selected.length === 0) return questions
+
+    const q3 = questions[q3Index]
+    const newOptions: QuestionOption[] = []
+
+    for (const uuid of selected) {
+      if (uuid === q2.otherOptionUuid) {
+        const custom =
+          q2.otherInputGroupId != null
+            ? String(answers[q2.otherInputGroupId] ?? "").trim()
+            : ""
+        const otherLabel =
+          q2.options?.find((o) => o.uuid === uuid)?.text ?? "Другой"
+        newOptions.push({ uuid, text: custom || otherLabel })
+      } else {
+        const opt = q2.options?.find((o) => o.uuid === uuid)
+        if (opt) newOptions.push({ uuid: opt.uuid, text: opt.text })
+      }
+    }
+
+    if (newOptions.length === 0) return questions
+
+    return questions.map((q, i) =>
+      i === q3Index
+        ? {
+          ...q3,
+          options: newOptions,
+          otherOptionUuid: undefined,
+          otherInputGroupId: undefined,
+        }
+        : q
+    )
+  }, [questions, answers])
+
   // ─── Visible questions (yashirilmaganlar) ──────────────────
-  const visibleQuestions = questions.filter(
+  const visibleQuestions = questionsResolved.filter(
     (q) => !logicResult.hiddenGroupUuids.has(q.id)
   )
 
@@ -151,11 +200,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             const fragStyles: any[] = fragment.slice(1).flat(1)
             const fragColor = fragStyles
               .find((s: any, idx: number, arr: any[]) => arr[idx - 1] === "color")
-            
+
             // ✅ ПРИОРИТЕТ: если есть цвет в фрагменте — используем его
             // если нет — используем цвет группы (красный для скобок)
             const finalColor = fragColor || groupColor
-            
+
             return (
               <span key={j} style={finalColor ? { color: finalColor } : undefined}>
                 {text}
@@ -360,9 +409,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // ✅ ФИХ 2: Добавляем динамические опции в Q3
-        extractedQuestions = injectDynamicOptions(extractedQuestions)
-
         setQuestions(extractedQuestions)
 
         if (rawBlocks.length > 0) {
@@ -386,58 +432,58 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     loadQuestions()
   }, [survey.id, sessionId])
 
-  // ✅ ФИХ 3: Динамическая инъекция опций из Q2 в Q3
-  const injectDynamicOptions = (questions: Question[]): Question[] => {
-    // Находим Q2 (checkbox с маркетплейсами)
-    const q2 = questions.find(q => 
-      q.type === "checkbox" && 
-      q.title.toLowerCase().includes("какими онлайн-маркетплейсами")
+  // Сброс ответа Q3, если соответствующий вариант снят в Q2
+  useEffect(() => {
+    const q2 = questions.find(
+      (q) =>
+        q.type === "checkbox" &&
+        q.title.toLowerCase().includes("какими онлайн-маркетплейсами")
     )
-    
-    // Находим Q3 (multiple choice "чаще всего")
-    const q3Index = questions.findIndex(q => 
-      q.type === "multiple_choice" && 
-      q.title.toLowerCase().includes("чаще всего")
+    const q3 = questions.find(
+      (q) =>
+        q.type === "multiple_choice" &&
+        q.title.toLowerCase().includes("чаще всего")
     )
-
-    if (!q2 || q3Index === -1 || !q2.otherInputGroupId) return questions
-
-    const q3 = questions[q3Index]
-    
-    // Получаем ответ на "Другой" из Q2
-    const otherText = answers[q2.otherInputGroupId]
-    
-    if (otherText && String(otherText).trim()) {
-      // Создаём временный UUID для динамической опции
-      const dynamicUuid = `dynamic-other-${q2.otherInputGroupId}`
-      
-      // Проверяем, не добавили ли уже
-      const alreadyExists = q3.options?.some(o => o.uuid === dynamicUuid)
-      
-      if (!alreadyExists && q3.options) {
-        // Находим "Другой" в Q3 и вставляем перед ним
-        const otherIndex = q3.options.findIndex(o => o.uuid === q3.otherOptionUuid)
-        const insertIndex = otherIndex >= 0 ? otherIndex : q3.options.length - 1
-        
-        const updatedOptions = [...q3.options]
-        updatedOptions.splice(insertIndex, 0, {
-          uuid: dynamicUuid,
-          text: String(otherText).trim()
-        })
-        
-        questions[q3Index] = {
-          ...q3,
-          options: updatedOptions
-        }
-      }
+    if (!q2 || !q3) return
+    const selected = answers[q2.id]
+    const q3ans = answers[q3.id]
+    if (q3ans == null || q3ans === "") return
+    const ok =
+      Array.isArray(selected) &&
+      selected.length > 0 &&
+      selected.includes(String(q3ans))
+    if (!ok) {
+      setAnswers((prev) => {
+        const next = { ...prev }
+        delete next[q3.id]
+        return next
+      })
     }
-
-    return questions
-  }
+  }, [questions, answers])
 
   // ✅ ФИХ 4: Замена @упоминаний на реальные значения в заголовках
   const replaceSchemaPlaceholders = (schema: any, answersMap: Answers): any => {
     if (!schema || !Array.isArray(schema)) return schema
+
+    const q2Market = questions.find(
+      (q) =>
+        q.type === "checkbox" &&
+        q.title.toLowerCase().includes("какими онлайн-маркетплейсами")
+    )
+    const q3Freq = questions.find(
+      (q) =>
+        q.type === "multiple_choice" &&
+        q.title.toLowerCase().includes("чаще всего")
+    )
+    let otherMentionText: string | null = null
+    if (q2Market?.otherInputGroupId) {
+      const t = answersMap[q2Market.otherInputGroupId]
+      if (t && String(t).trim()) otherMentionText = String(t).trim()
+    }
+    if (!otherMentionText && q3Freq?.otherInputGroupId) {
+      const t = answersMap[q3Freq.otherInputGroupId]
+      if (t && String(t).trim()) otherMentionText = String(t).trim()
+    }
 
     return schema.map((item: any) => {
       if (typeof item === "string") return item
@@ -445,51 +491,26 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
       const first = item[0]
 
-      // Простая строка с mention
       if (typeof first === "string" && first.includes("@")) {
-        // Ищем упоминание типа "@Напишите ответ респондента"
-        // Это соответствует полю otherInputGroupId из предыдущих вопросов
-        
-        // Пробуем найти ответ на "Другой" из Q3
-        const q3 = questions.find(q => 
-          q.type === "multiple_choice" && 
-          q.title.toLowerCase().includes("чаще всего")
-        )
-        
-        if (q3?.otherInputGroupId) {
-          const otherText = answersMap[q3.otherInputGroupId]
-          if (otherText && String(otherText).trim()) {
-            return [first.replace(/@[^@]+/g, String(otherText).trim()), ...item.slice(1)]
-          }
+        if (otherMentionText) {
+          return [first.replace(/@[^@]+/g, otherMentionText), ...item.slice(1)]
         }
-        
         return item
       }
 
-      // Вложенный массив фрагментов
       if (Array.isArray(first)) {
         const replacedInner = first.map((fragment: any) => {
           if (typeof fragment === "string") return fragment
           if (Array.isArray(fragment)) {
             const text = fragment[0]
-            if (typeof text === "string" && text.includes("@")) {
-              const q3 = questions.find(q => 
-                q.type === "multiple_choice" && 
-                q.title.toLowerCase().includes("чаще всего")
-              )
-              
-              if (q3?.otherInputGroupId) {
-                const otherText = answersMap[q3.otherInputGroupId]
-                if (otherText && String(otherText).trim()) {
-                  return [text.replace(/@[^@]+/g, String(otherText).trim()), ...fragment.slice(1)]
-                }
-              }
+            if (typeof text === "string" && text.includes("@") && otherMentionText) {
+              return [text.replace(/@[^@]+/g, otherMentionText), ...fragment.slice(1)]
             }
             return fragment
           }
           return fragment
         })
-        
+
         return [replacedInner, ...item.slice(1)]
       }
 
@@ -758,10 +779,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
     const baseAnswered = currentQuestion.required
       ? answers[currentQuestion.id] !== undefined &&
-        answers[currentQuestion.id] !== "" &&
-        (Array.isArray(answers[currentQuestion.id])
-          ? answers[currentQuestion.id].length > 0
-          : true)
+      answers[currentQuestion.id] !== "" &&
+      (Array.isArray(answers[currentQuestion.id])
+        ? answers[currentQuestion.id].length > 0
+        : true)
       : true
 
     if (!baseAnswered) return false
@@ -771,7 +792,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         currentQuestion.type === "multiple_choice"
           ? answers[currentQuestion.id] === currentQuestion.otherOptionUuid
           : Array.isArray(answers[currentQuestion.id]) &&
-            answers[currentQuestion.id].includes(currentQuestion.otherOptionUuid)
+          answers[currentQuestion.id].includes(currentQuestion.otherOptionUuid)
 
       if (isOtherSelected) {
         const otherText = answers[currentQuestion.otherInputGroupId]
@@ -825,7 +846,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         onClick={(e) => {
           const tag = (e.target as HTMLElement).tagName
           if (!["INPUT", "TEXTAREA", "BUTTON", "LABEL", "SELECT"].includes(tag)) {
-            ;(document.activeElement as HTMLElement)?.blur()
+            ; (document.activeElement as HTMLElement)?.blur()
           }
         }}
       >
@@ -869,46 +890,46 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 {currentQuestion.options
                   .filter((option) => !logicResult.hiddenGroupUuids.has(option.uuid))
                   .map((option) => {
-                  const isSelected = answers[currentQuestion.id] === option.uuid
-                  const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
-                  return (
-                    <div key={option.uuid}>
-                      <label
-                        className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
-                        style={{
-                          borderColor: isSelected ? "hsl(var(--primary))" : undefined,
-                        }}
-                      >
-                        <input
-                          type="radio"
-                          name={`question-${currentQuestion.id}`}
-                          value={option.uuid}
-                          checked={isSelected}
-                          onChange={() => handleAnswer(currentQuestion.id, option.uuid)}
-                          className="w-4 h-4 text-primary flex-shrink-0"
-                        />
-                        <span className="flex-1 text-sm break-words">{option.text}</span>
-                        {isSelected && (
-                          <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
+                    const isSelected = answers[currentQuestion.id] === option.uuid
+                    const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
+                    return (
+                      <div key={option.uuid}>
+                        <label
+                          className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
+                          style={{
+                            borderColor: isSelected ? "hsl(var(--primary))" : undefined,
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name={`question-${currentQuestion.id}`}
+                            value={option.uuid}
+                            checked={isSelected}
+                            onChange={() => handleAnswer(currentQuestion.id, option.uuid)}
+                            className="w-4 h-4 text-primary flex-shrink-0"
+                          />
+                          <span className="flex-1 text-sm break-words">{option.text}</span>
+                          {isSelected && (
+                            <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
+                          )}
+                        </label>
+                        {isOtherOption && isSelected && currentQuestion.otherInputGroupId && (
+                          <input
+                            type="text"
+                            value={answers[currentQuestion.otherInputGroupId!] || ""}
+                            onChange={(e) =>
+                              setAnswers((prev) => ({
+                                ...prev,
+                                [currentQuestion.otherInputGroupId!]: e.target.value,
+                              }))
+                            }
+                            placeholder="Напишите ответ респондента"
+                            className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
                         )}
-                      </label>
-                      {isOtherOption && isSelected && currentQuestion.otherInputGroupId && (
-                        <input
-                          type="text"
-                          value={answers[currentQuestion.otherInputGroupId!] || ""}
-                          onChange={(e) =>
-                            setAnswers((prev) => ({
-                              ...prev,
-                              [currentQuestion.otherInputGroupId!]: e.target.value,
-                            }))
-                          }
-                          placeholder="Напишите ответ респондента"
-                          className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                        />
-                      )}
-                    </div>
-                  )
-                })}
+                      </div>
+                    )
+                  })}
               </div>
             )}
 
@@ -932,43 +953,43 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 {currentQuestion.options
                   .filter((option) => !logicResult.hiddenGroupUuids.has(option.uuid))
                   .map((option) => {
-                  const selected: string[] = Array.isArray(answers[currentQuestion.id])
-                    ? answers[currentQuestion.id]
-                    : []
-                  const isChecked = selected.includes(option.uuid)
-                  const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
-                  return (
-                    <div key={option.uuid}>
-                      <label
-                        className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
-                        style={{ borderColor: isChecked ? "hsl(var(--primary))" : undefined }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => handleCheckboxAnswer(currentQuestion.id, option.uuid)}
-                          className="w-4 h-4 text-primary flex-shrink-0"
-                        />
-                        <span className="flex-1 text-sm break-words">{option.text}</span>
-                        {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
-                      </label>
-                      {isOtherOption && isChecked && currentQuestion.otherInputGroupId && (
-                        <input
-                          type="text"
-                          value={answers[currentQuestion.otherInputGroupId!] || ""}
-                          onChange={(e) =>
-                            setAnswers((prev) => ({
-                              ...prev,
-                              [currentQuestion.otherInputGroupId!]: e.target.value,
-                            }))
-                          }
-                          placeholder="Напишите ответ респондента"
-                          className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                        />
-                      )}
-                    </div>
-                  )
-                })}
+                    const selected: string[] = Array.isArray(answers[currentQuestion.id])
+                      ? answers[currentQuestion.id]
+                      : []
+                    const isChecked = selected.includes(option.uuid)
+                    const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
+                    return (
+                      <div key={option.uuid}>
+                        <label
+                          className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
+                          style={{ borderColor: isChecked ? "hsl(var(--primary))" : undefined }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleCheckboxAnswer(currentQuestion.id, option.uuid)}
+                            className="w-4 h-4 text-primary flex-shrink-0"
+                          />
+                          <span className="flex-1 text-sm break-words">{option.text}</span>
+                          {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
+                        </label>
+                        {isOtherOption && isChecked && currentQuestion.otherInputGroupId && (
+                          <input
+                            type="text"
+                            value={answers[currentQuestion.otherInputGroupId!] || ""}
+                            onChange={(e) =>
+                              setAnswers((prev) => ({
+                                ...prev,
+                                [currentQuestion.otherInputGroupId!]: e.target.value,
+                              }))
+                            }
+                            placeholder="Напишите ответ респондента"
+                            className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
               </div>
             )}
 
@@ -987,11 +1008,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     <button
                       key={val}
                       onClick={() => handleAnswer(currentQuestion.id, val)}
-                      className={`w-10 h-10 rounded-lg border-2 text-sm font-semibold transition-colors ${
-                        answers[currentQuestion.id] === val
+                      className={`w-10 h-10 rounded-lg border-2 text-sm font-semibold transition-colors ${answers[currentQuestion.id] === val
                           ? "bg-primary text-primary-foreground border-primary"
                           : "border-border hover:border-primary"
-                      }`}
+                        }`}
                     >
                       {val}
                     </button>
