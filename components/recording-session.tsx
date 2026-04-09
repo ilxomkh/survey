@@ -212,12 +212,24 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             .filter((o) => o.text)
           // groupId = choice option larning groupUuid (barida bir xil)
           const groupId = choiceOptionBlocks[0]?.groupUuid || titleBlock.groupUuid
+
+          // "Другой" option + INPUT_TEXT поле рядом
+          const mcInputTextBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
+          const mcOtherOptionBlock = choiceOptionBlocks.find(
+            (b: any) =>
+              (b.payload?.text || "").toLowerCase().includes("boshqa") ||
+              (b.payload?.text || "").toLowerCase().includes("другой") ||
+              (b.payload?.text || "").toLowerCase().includes("other")
+          )
+
           return {
             id: groupId,
             title: questionText,
             type: "multiple_choice",
             options,
             required: titleBlock.payload?.isRequired === true,
+            otherOptionUuid: mcOtherOptionBlock?.uuid,
+            otherInputGroupId: mcInputTextBlock?.groupUuid,
           }
         }
 
@@ -508,7 +520,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       setLogicResult(result)
 
       // Если JUMP_TO_PAGE сработал — сразу показываем завершение
-      if (result.jumpToPageUuid) {
+      // НО: если выбран "Другой" и есть поле ввода — не завершаем, ждём ввода
+      const isOtherSelected =
+        currentQuestion?.otherOptionUuid &&
+        currentQuestion?.otherInputGroupId &&
+        value === currentQuestion.otherOptionUuid
+      if (result.jumpToPageUuid && !isOtherSelected) {
         setShowFinishConfirm(true)
         return
       }
@@ -638,31 +655,48 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             {/* MULTIPLE_CHOICE — uuid saqlanadi, text ko'rsatiladi */}
             {currentQuestion.type === "multiple_choice" && currentQuestion.options && (
               <div className="space-y-2">
-                {currentQuestion.options.map((option) => (
-                  <label
-                    key={option.uuid}
-                    className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
-                    style={{
-                      borderColor:
-                        answers[currentQuestion.id] === option.uuid
-                          ? "hsl(var(--primary))"
-                          : undefined,
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name={`question-${currentQuestion.id}`}
-                      value={option.uuid}
-                      checked={answers[currentQuestion.id] === option.uuid}
-                      onChange={() => handleAnswer(currentQuestion.id, option.uuid)}
-                      className="w-4 h-4 text-primary flex-shrink-0"
-                    />
-                    <span className="flex-1 text-sm break-words">{option.text}</span>
-                    {answers[currentQuestion.id] === option.uuid && (
-                      <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    )}
-                  </label>
-                ))}
+                {currentQuestion.options.map((option) => {
+                  const isSelected = answers[currentQuestion.id] === option.uuid
+                  const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
+                  return (
+                    <div key={option.uuid}>
+                      <label
+                        className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
+                        style={{
+                          borderColor: isSelected ? "hsl(var(--primary))" : undefined,
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name={`question-${currentQuestion.id}`}
+                          value={option.uuid}
+                          checked={isSelected}
+                          onChange={() => handleAnswer(currentQuestion.id, option.uuid)}
+                          className="w-4 h-4 text-primary flex-shrink-0"
+                        />
+                        <span className="flex-1 text-sm break-words">{option.text}</span>
+                        {isSelected && (
+                          <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
+                        )}
+                      </label>
+                      {/* "Другой" — inline текстовое поле */}
+                      {isOtherOption && isSelected && currentQuestion.otherInputGroupId && (
+                        <input
+                          type="text"
+                          value={answers[currentQuestion.otherInputGroupId!] || ""}
+                          onChange={(e) =>
+                            setAnswers((prev) => ({
+                              ...prev,
+                              [currentQuestion.otherInputGroupId!]: e.target.value,
+                            }))
+                          }
+                          placeholder="Напишите ответ респондента"
+                          className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        />
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
 
