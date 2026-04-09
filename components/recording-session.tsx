@@ -176,16 +176,19 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             .filter((o) => o.text)
           const groupId = optionBlocks[0]?.groupUuid || titleBlock.groupUuid
 
-          // "Другой" option — последний checkbox с lockInPlace обычно
-          // Ищем INPUT_TEXT в siblings (поле для ввода "другого")
+          // "Другой" option — ищем только по тексту (не по lockInPlace — он у всех)
+          // INPUT_TEXT блок рядом = поле ввода для "Другой"
           const inputTextBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
           const otherOptionBlock = optionBlocks.find(
             (b: any) =>
-              b.payload?.lockInPlace?.length > 0 ||
               (b.payload?.text || "").toLowerCase().includes("boshqa") ||
               (b.payload?.text || "").toLowerCase().includes("другой") ||
               (b.payload?.text || "").toLowerCase().includes("other")
           )
+          // Показывать поле только если otherOptionBlock найден (иначе inputText — не для "Другой")
+          const checkboxOtherInputGroupId = otherOptionBlock && inputTextBlock
+            ? inputTextBlock.groupUuid
+            : undefined
 
           return {
             id: groupId,
@@ -195,7 +198,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             multiple: true,
             required: titleBlock.payload?.isRequired === true,
             otherOptionUuid: otherOptionBlock?.uuid,
-            otherInputGroupId: inputTextBlock?.groupUuid,
+            otherInputGroupId: checkboxOtherInputGroupId,
           }
         }
 
