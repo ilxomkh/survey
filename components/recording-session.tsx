@@ -386,6 +386,21 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         if (rawBlocks.length > 0) {
           const engine = buildLogicEngine(rawBlocks)
           setLogicEngine(engine)
+
+          // DEBUG: вопросы и их id
+          console.log("[DEBUG] Questions parsed:", extractedQuestions.map(q => ({
+            id: q.id,
+            title: q.title.slice(0, 40),
+            type: q.type,
+          })))
+          console.log("[DEBUG] Engine rules count:", engine.rules.length)
+          console.log("[DEBUG] HIDE rules:", engine.rules
+            .filter(r => r.actions.some(a => a.type === "HIDE_BLOCKS"))
+            .map(r => ({
+              conditions: r.conditionals.map(c => `${c.fieldGroupUuid.slice(0,8)} ${c.comparison} ${c.value}`),
+              hides: r.actions.filter(a => a.type === "HIDE_BLOCKS").map(a => a.blocks).flat()
+            }))
+          )
         }
       } catch (err) {
         console.error("[RecordingSession] Ошибка загрузки вопросов:", err)
@@ -612,6 +627,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     if (logicEngine) {
       const result = logicEngine.evaluate(newAnswers)
       setLogicResult(result)
+      if (result.hiddenGroupUuids.size > 0) {
+        console.log("[DEBUG] Hidden uuids:", [...result.hiddenGroupUuids])
+      }
 
       // Если JUMP_TO_PAGE сработал — сразу показываем завершение
       // НО: если выбран "Другой" и есть поле ввода — не завершаем, ждём ввода
