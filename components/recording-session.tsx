@@ -13,24 +13,23 @@ interface Survey {
   title: string
 }
 
-// option uuid + text birga saqlanadi
 interface QuestionOption {
   uuid: string
   text: string
 }
 
 interface Question {
-  id: string        // blockGroupUuid (input blok groupUuid) — answers kaliti va engine kaliti
+  id: string
   title: string
-  rawSchema?: any   // oригинальный safeHTMLSchema для цветного рендера
+  rawSchema?: any
   type: string
   options?: QuestionOption[]
   required?: boolean
   scaleMin?: number
   scaleMax?: number
   multiple?: boolean
-  otherOptionUuid?: string    // "Другой" option uuid — checkbox uchun
-  otherInputGroupId?: string  // INPUT_TEXT groupUuid — "Другой" yozuvi uchun
+  otherOptionUuid?: string
+  otherInputGroupId?: string
 }
 
 interface RecordingSessionProps {
@@ -53,7 +52,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const [showFinishConfirm, setShowFinishConfirm] = useState(false)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
 
-  // Conditional logic
   const [logicEngine, setLogicEngine] = useState<TallyLogicEngine | null>(null)
   const [logicResult, setLogicResult] = useState<LogicResult>({
     hiddenGroupUuids: new Set(),
@@ -90,12 +88,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         if (typeof item === "string") return item
         if (!Array.isArray(item)) return ""
 
-        // Структура: [текст_или_массив, ...стили]
-        // item[0] может быть: строка, или массив [[текст, стили], ...]
         const first = item[0]
         if (typeof first === "string") return first
 
-        // item[0] — вложенный массив фрагментов [[текст, стили], ...]
         if (Array.isArray(first)) {
           return first
             .map((fragment: any) => {
@@ -112,7 +107,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       .trim()
   }
 
-  // Рендер safeHTMLSchema с цветами (красный текст подсказок)
+  // ✅ ФИХ 1: Рендер safeHTMLSchema — ВСЕ скобки красным
   const renderSchema = (schema: any): React.ReactNode => {
     if (!schema || !Array.isArray(schema)) return null
 
@@ -127,7 +122,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
       const first = item[0]
 
-      // Простая строка с возможными стилями: ["текст", [["color","red"],...]]
       if (typeof first === "string") {
         const styleArr = item.slice(1)
         const color = styleArr
@@ -141,9 +135,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         return
       }
 
-      // Вложенный массив фрагментов: [[["текст", стили], ...], [стили группы...]]
       if (Array.isArray(first)) {
-        // Стили группы (второй элемент item)
         const groupStyleArr: any[] = Array.isArray(item[1]) ? item[1] : []
         const groupColor = groupStyleArr
           .flat(2)
@@ -156,11 +148,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           if (Array.isArray(fragment)) {
             const text = fragment[0]
             if (typeof text !== "string") return null
-            // Стили фрагмента: [["tag","span"],["color","rgb(...)"]]
             const fragStyles: any[] = fragment.slice(1).flat(1)
             const fragColor = fragStyles
               .find((s: any, idx: number, arr: any[]) => arr[idx - 1] === "color")
+            
+            // ✅ ПРИОРИТЕТ: если есть цвет в фрагменте — используем его
+            // если нет — используем цвет группы (красный для скобок)
             const finalColor = fragColor || groupColor
+            
             return (
               <span key={j} style={finalColor ? { color: finalColor } : undefined}>
                 {text}
@@ -177,8 +172,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }
 
   const parseTallyBlocks = (blocks: any[]): Question[] => {
-    // CONDITIONAL_LOGIC bu yerda skip QILINMAYDI — engine uchun kerak
-    // Faqat UI uchun keraksiz turlar o'tkazib yuboriladi
     const skipTypes = new Set(["FORM_TITLE", "PAGE_BREAK", "HEADING_2", "CONDITIONAL_LOGIC", "HIDDEN_FIELDS"])
 
     const titleBlocks = blocks.filter(
@@ -204,10 +197,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         const firstSibling = siblingBlocks.find((b: any) => !skipTypes.has(b.type))
         const groupType = firstSibling?.groupType || titleBlock.groupType || ""
 
-        // LINEAR_SCALE
         if (groupType === "LINEAR_SCALE" || siblingBlocks.some((b: any) => b.type === "LINEAR_SCALE")) {
           const scaleBlock = siblingBlocks.find((b: any) => b.type === "LINEAR_SCALE") || firstSibling
-          // id = scaleBlock groupUuid (engine shu uuid ni kutadi)
           const groupId = scaleBlock?.groupUuid || titleBlock.groupUuid
           return {
             id: groupId,
@@ -220,7 +211,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // INPUT_NUMBER
         if (groupType === "INPUT_NUMBER" || siblingBlocks.some((b: any) => b.type === "INPUT_NUMBER")) {
           const inputBlock = siblingBlocks.find((b: any) => b.type === "INPUT_NUMBER")
           const groupId = inputBlock?.groupUuid || titleBlock.groupUuid
@@ -233,7 +223,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // DROPDOWN
         if (groupType === "DROPDOWN" || siblingBlocks.some((b: any) => b.type === "DROPDOWN_OPTION")) {
           const optionBlocks = siblingBlocks.filter((b: any) => b.type === "DROPDOWN_OPTION")
           const options: QuestionOption[] = optionBlocks
@@ -253,7 +242,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // CHECKBOXES — multiple choice
         if (groupType === "CHECKBOXES" || siblingBlocks.some((b: any) => b.type === "CHECKBOX")) {
           const optionBlocks = siblingBlocks.filter((b: any) => b.type === "CHECKBOX")
           const options: QuestionOption[] = optionBlocks
@@ -264,8 +252,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             .filter((o) => o.text)
           const groupId = optionBlocks[0]?.groupUuid || titleBlock.groupUuid
 
-          // "Другой" option — ищем только по тексту (не по lockInPlace — он у всех)
-          // INPUT_TEXT блок рядом = поле ввода для "Другой"
           const inputTextBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
           const otherOptionBlock = optionBlocks.find(
             (b: any) =>
@@ -273,7 +259,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               (b.payload?.text || "").toLowerCase().includes("другой") ||
               (b.payload?.text || "").toLowerCase().includes("other")
           )
-          // Показывать поле только если otherOptionBlock найден (иначе inputText — не для "Другой")
           const checkboxOtherInputGroupId = otherOptionBlock && inputTextBlock
             ? inputTextBlock.groupUuid
             : undefined
@@ -291,7 +276,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // MULTIPLE_CHOICE — single choice
         const choiceOptionBlocks = siblingBlocks.filter(
           (b: any) => b.type === "MULTIPLE_CHOICE_OPTION" || b.groupType === "MULTIPLE_CHOICE"
         )
@@ -302,10 +286,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
             }))
             .filter((o) => o.text)
-          // groupId = choice option larning groupUuid (barida bir xil)
           const groupId = choiceOptionBlocks[0]?.groupUuid || titleBlock.groupUuid
 
-          // "Другой" option + INPUT_TEXT поле рядом
           const mcInputTextBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
           const mcOtherOptionBlock = choiceOptionBlocks.find(
             (b: any) =>
@@ -326,7 +308,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // YES_NO
         if (groupType === "YES_NO") {
           return {
             id: titleBlock.groupUuid,
@@ -337,7 +318,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // INPUT_TEXT — default
         const textBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
         const groupId = textBlock?.groupUuid || titleBlock.groupUuid
         return {
@@ -380,27 +360,21 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
+        // ✅ ФИХ 2: Добавляем динамические опции в Q3
+        extractedQuestions = injectDynamicOptions(extractedQuestions)
+
         setQuestions(extractedQuestions)
 
-        // Engine qurish — blocks mavjud bo'lsa
         if (rawBlocks.length > 0) {
           const engine = buildLogicEngine(rawBlocks)
           setLogicEngine(engine)
 
-          // DEBUG: вопросы и их id
           console.log("[DEBUG] Questions parsed:", extractedQuestions.map(q => ({
             id: q.id,
             title: q.title.slice(0, 40),
             type: q.type,
           })))
           console.log("[DEBUG] Engine rules count:", engine.rules.length)
-          console.log("[DEBUG] HIDE rules:", engine.rules
-            .filter(r => r.actions.some(a => a.type === "HIDE_BLOCKS"))
-            .map(r => ({
-              conditions: r.conditionals.map(c => `${c.fieldGroupUuid.slice(0,8)} ${c.comparison} ${c.value}`),
-              hides: r.actions.filter(a => a.type === "HIDE_BLOCKS").map(a => a.blocks).flat()
-            }))
-          )
         }
       } catch (err) {
         console.error("[RecordingSession] Ошибка загрузки вопросов:", err)
@@ -411,6 +385,123 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
     loadQuestions()
   }, [survey.id, sessionId])
+
+  // ✅ ФИХ 3: Динамическая инъекция опций из Q2 в Q3
+  const injectDynamicOptions = (questions: Question[]): Question[] => {
+    // Находим Q2 (checkbox с маркетплейсами)
+    const q2 = questions.find(q => 
+      q.type === "checkbox" && 
+      q.title.toLowerCase().includes("какими онлайн-маркетплейсами")
+    )
+    
+    // Находим Q3 (multiple choice "чаще всего")
+    const q3Index = questions.findIndex(q => 
+      q.type === "multiple_choice" && 
+      q.title.toLowerCase().includes("чаще всего")
+    )
+
+    if (!q2 || q3Index === -1 || !q2.otherInputGroupId) return questions
+
+    const q3 = questions[q3Index]
+    
+    // Получаем ответ на "Другой" из Q2
+    const otherText = answers[q2.otherInputGroupId]
+    
+    if (otherText && String(otherText).trim()) {
+      // Создаём временный UUID для динамической опции
+      const dynamicUuid = `dynamic-other-${q2.otherInputGroupId}`
+      
+      // Проверяем, не добавили ли уже
+      const alreadyExists = q3.options?.some(o => o.uuid === dynamicUuid)
+      
+      if (!alreadyExists && q3.options) {
+        // Находим "Другой" в Q3 и вставляем перед ним
+        const otherIndex = q3.options.findIndex(o => o.uuid === q3.otherOptionUuid)
+        const insertIndex = otherIndex >= 0 ? otherIndex : q3.options.length - 1
+        
+        const updatedOptions = [...q3.options]
+        updatedOptions.splice(insertIndex, 0, {
+          uuid: dynamicUuid,
+          text: String(otherText).trim()
+        })
+        
+        questions[q3Index] = {
+          ...q3,
+          options: updatedOptions
+        }
+      }
+    }
+
+    return questions
+  }
+
+  // ✅ ФИХ 4: Замена @упоминаний на реальные значения в заголовках
+  const replaceSchemaPlaceholders = (schema: any, answersMap: Answers): any => {
+    if (!schema || !Array.isArray(schema)) return schema
+
+    return schema.map((item: any) => {
+      if (typeof item === "string") return item
+      if (!Array.isArray(item)) return item
+
+      const first = item[0]
+
+      // Простая строка с mention
+      if (typeof first === "string" && first.includes("@")) {
+        // Ищем упоминание типа "@Напишите ответ респондента"
+        // Это соответствует полю otherInputGroupId из предыдущих вопросов
+        
+        // Пробуем найти ответ на "Другой" из Q3
+        const q3 = questions.find(q => 
+          q.type === "multiple_choice" && 
+          q.title.toLowerCase().includes("чаще всего")
+        )
+        
+        if (q3?.otherInputGroupId) {
+          const otherText = answersMap[q3.otherInputGroupId]
+          if (otherText && String(otherText).trim()) {
+            return [first.replace(/@[^@]+/g, String(otherText).trim()), ...item.slice(1)]
+          }
+        }
+        
+        return item
+      }
+
+      // Вложенный массив фрагментов
+      if (Array.isArray(first)) {
+        const replacedInner = first.map((fragment: any) => {
+          if (typeof fragment === "string") return fragment
+          if (Array.isArray(fragment)) {
+            const text = fragment[0]
+            if (typeof text === "string" && text.includes("@")) {
+              const q3 = questions.find(q => 
+                q.type === "multiple_choice" && 
+                q.title.toLowerCase().includes("чаще всего")
+              )
+              
+              if (q3?.otherInputGroupId) {
+                const otherText = answersMap[q3.otherInputGroupId]
+                if (otherText && String(otherText).trim()) {
+                  return [text.replace(/@[^@]+/g, String(otherText).trim()), ...fragment.slice(1)]
+                }
+              }
+            }
+            return fragment
+          }
+          return fragment
+        })
+        
+        return [replacedInner, ...item.slice(1)]
+      }
+
+      return item
+    })
+  }
+
+  // ✅ ФИХ 5: Рендер с заменой @упоминаний
+  const renderSchemaWithReplacements = (schema: any): React.ReactNode => {
+    const replacedSchema = replaceSchemaPlaceholders(schema, answers)
+    return renderSchema(replacedSchema)
+  }
 
   // ─── Инициализация записи и геолокации ─────────────────────
   useEffect(() => {
@@ -566,7 +657,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         })
       }
 
-      // UUID → Text conversion для backend
       const surveyAnswersList = visibleQuestions
         .filter((q) => {
           const val = answers[q.id]
@@ -577,7 +667,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         .map((q) => {
           let value = answers[q.id]
 
-          // uuid → text
           if (q.type === "multiple_choice" && q.options) {
             const found = q.options.find((o) => o.uuid === value)
             value = found?.text ?? value
@@ -615,15 +704,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     return `${m}:${s.toString().padStart(2, "0")}`
   }
 
-  // ─── Answer handlers ────────────────────────────────────────
-  // MUHIM: multiple_choice va dropdown uchun uuid saqlanadi (text emas)
-  // Checkbox uchun uuid[] massivi saqlanadi
-
   const handleAnswer = (questionId: string, value: any) => {
     const newAnswers = { ...answers, [questionId]: value }
     setAnswers(newAnswers)
 
-    // Синхронно считаем логику с новыми ответами — не ждём useEffect
     if (logicEngine) {
       const result = logicEngine.evaluate(newAnswers)
       setLogicResult(result)
@@ -631,8 +715,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         console.log("[DEBUG] Hidden uuids:", [...result.hiddenGroupUuids])
       }
 
-      // Если JUMP_TO_PAGE сработал — сразу показываем завершение
-      // НО: если выбран "Другой" и есть поле ввода — не завершаем, ждём ввода
       const isOtherSelected =
         currentQuestion?.otherOptionUuid &&
         currentQuestion?.otherInputGroupId &&
@@ -643,7 +725,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       }
     }
 
-    // Последний вопрос и не text/number — предлагаем завершить
     if (
       isLastVisible &&
       currentQuestion?.id === questionId &&
@@ -662,21 +743,19 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     const newAnswers = { ...answers, [questionId]: updated }
     setAnswers(newAnswers)
 
-    // Синхронно пересчитываем — SHOW/HIDE_BLOCKS сработают сразу
     if (logicEngine) {
       const result = logicEngine.evaluate(newAnswers)
       setLogicResult(result)
     }
   }
 
-  // ─── Navigation ─────────────────────────────────────────────
   const currentQuestion = visibleQuestions[currentQuestionIndex]
   const isLastVisible = currentQuestionIndex === visibleQuestions.length - 1
 
+  // ✅ ФИХ 6: Улучшенная валидация canGoNext
   const canGoNext = (() => {
     if (!currentQuestion) return true
 
-    // Базовая проверка — ответ дан
     const baseAnswered = currentQuestion.required
       ? answers[currentQuestion.id] !== undefined &&
         answers[currentQuestion.id] !== "" &&
@@ -687,7 +766,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
     if (!baseAnswered) return false
 
-    // Если выбран "Другой" и есть поле ввода — оно должно быть заполнено
     if (currentQuestion.otherOptionUuid && currentQuestion.otherInputGroupId) {
       const isOtherSelected =
         currentQuestion.type === "multiple_choice"
@@ -705,7 +783,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   })()
 
   const handleNext = () => {
-    // JUMP_TO_PAGE triggered — oprosni tugatish
+    // ✅ ФИХ 7: Блокировка если нет ответа
+    if (!canGoNext) return
+
     if (logicResult.jumpToPageUuid) {
       setShowFinishConfirm(true)
       return
@@ -720,7 +800,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     if (currentQuestionIndex > 0) setCurrentQuestionIndex((prev) => prev - 1)
   }
 
-  // ─── Loading screen ──────────────────────────────────────────
   if (loading) {
     return (
       <div className="fixed inset-0 bg-background/95 flex items-center justify-center z-50 p-4">
@@ -738,7 +817,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     )
   }
 
-  // ─── Main render ─────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
       <div
@@ -751,7 +829,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }}
       >
-        {/* Заголовок */}
         <div className="mb-4">
           <h2 className="font-semibold text-base sm:text-lg">{survey.title}</h2>
           {visibleQuestions.length > 0 && (
@@ -779,15 +856,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           </p>
         ) : currentQuestion ? (
           <div className="space-y-4">
-            {/* Текст вопроса с цветами */}
+            {/* ✅ ФИХ 8: Заголовок с заменой @упоминаний */}
             <h3 className="font-medium text-base leading-snug">
               {currentQuestion.rawSchema
-                ? renderSchema(currentQuestion.rawSchema)
+                ? renderSchemaWithReplacements(currentQuestion.rawSchema)
                 : currentQuestion.title}
               {currentQuestion.required && <span className="text-red-500 ml-1">*</span>}
             </h3>
 
-            {/* MULTIPLE_CHOICE — uuid saqlanadi, text ko'rsatiladi */}
             {currentQuestion.type === "multiple_choice" && currentQuestion.options && (
               <div className="space-y-2">
                 {currentQuestion.options
@@ -816,7 +892,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                           <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
                         )}
                       </label>
-                      {/* "Другой" — inline текстовое поле */}
                       {isOtherOption && isSelected && currentQuestion.otherInputGroupId && (
                         <input
                           type="text"
@@ -837,7 +912,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               </div>
             )}
 
-            {/* DROPDOWN — uuid saqlanadi, text ko'rsatiladi */}
             {currentQuestion.type === "dropdown" && currentQuestion.options && (
               <select
                 value={answers[currentQuestion.id] || ""}
@@ -853,7 +927,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               </select>
             )}
 
-            {/* CHECKBOX — uuid[] saqlanadi */}
             {currentQuestion.type === "checkbox" && currentQuestion.options && (
               <div className="space-y-2">
                 {currentQuestion.options
@@ -879,7 +952,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                         <span className="flex-1 text-sm break-words">{option.text}</span>
                         {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
                       </label>
-                      {/* "Другой" — inline текстовое поле */}
                       {isOtherOption && isChecked && currentQuestion.otherInputGroupId && (
                         <input
                           type="text"
@@ -900,7 +972,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               </div>
             )}
 
-            {/* LINEAR_SCALE */}
             {currentQuestion.type === "linear_scale" && (
               <div className="space-y-3">
                 <div className="flex gap-2 flex-wrap">
@@ -933,7 +1004,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               </div>
             )}
 
-            {/* INPUT_NUMBER */}
             {currentQuestion.type === "number" && (
               <input
                 type="number"
@@ -951,7 +1021,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               />
             )}
 
-            {/* TEXT */}
             {currentQuestion.type === "text" && (
               <textarea
                 value={answers[currentQuestion.id] || ""}
@@ -977,7 +1046,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               />
             )}
 
-            {/* YES_NO */}
             {currentQuestion.type === "yes_no" && (
               <div className="flex gap-3">
                 <Button
@@ -997,7 +1065,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               </div>
             )}
 
-            {/* Навигация */}
             {visibleQuestions.length > 1 && (
               <div className="flex gap-2 pt-2 border-t">
                 <Button
@@ -1032,7 +1099,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         ) : null}
       </div>
 
-      {/* ─── Фиксированная панель снизу ─── */}
       <div
         className="fixed bottom-0 left-0 right-0 bg-background border-t z-50 px-4 pt-3 space-y-2 transition-transform duration-200"
         style={{
