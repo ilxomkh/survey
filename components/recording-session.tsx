@@ -1,9 +1,17 @@
 "use client"
 
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, Fragment } from "react"
+import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { AlertCircle, Square, Loader2, MapPin, CheckCircle2 } from "lucide-react"
 import { apiClient } from "@/lib/api-client"
 import { buildLogicEngine, TallyLogicEngine, LogicResult, Answers } from "@/lib/tally-logic-engine"
@@ -36,6 +44,33 @@ interface RecordingSessionProps {
   sessionId: string
   survey: Survey
   onComplete: () => void
+}
+
+/** Текст внутри `{…}` — красным; сами фигурные скобки обычным цветом */
+function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
+  if (!text.includes("{")) return text
+  const parts: ReactNode[] = []
+  const re = /\{([^}]*)\}/g
+  let last = 0
+  let m: RegExpExecArray | null
+  let k = 0
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) {
+      parts.push(<span key={`${keyPrefix}t${k++}`}>{text.slice(last, m.index)}</span>)
+    }
+    parts.push(
+      <Fragment key={`${keyPrefix}b${k++}`}>
+        {"{"}
+        <span className="text-red-600 dark:text-red-400">{m[1]}</span>
+        {"}"}
+      </Fragment>
+    )
+    last = m.index + m[0].length
+  }
+  if (last < text.length) {
+    parts.push(<span key={`${keyPrefix}t${k++}`}>{text.slice(last)}</span>)
+  }
+  return parts.length > 0 ? <>{parts}</> : text
 }
 
 /** Заголовок Q2 (маркетплейсы): русский + типичная узбекская латиница в Tally */
@@ -229,7 +264,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       .trim()
   }
 
-  // ✅ ФИХ 1: Рендер safeHTMLSchema — ВСЕ скобки красным
+  // Рендер safeHTMLSchema; `{плейсхолдер}` — красный текст внутри скобок
   const renderSchema = (schema: any): React.ReactNode => {
     if (!schema || !Array.isArray(schema)) return null
 
@@ -237,7 +272,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
     schema.forEach((item: any, i: number) => {
       if (typeof item === "string") {
-        nodes.push(<span key={i}>{item}</span>)
+        nodes.push(
+          <span key={i}>{renderCurlyBraceInnerRed(item, `sch-s-${i}-`)}</span>
+        )
         return
       }
       if (!Array.isArray(item)) return
@@ -251,7 +288,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           .find((s: any, idx: number, arr: any[]) => arr[idx - 1] === "color")
         nodes.push(
           <span key={i} style={color ? { color } : undefined}>
-            {first}
+            {renderCurlyBraceInnerRed(first, `sch-f-${i}-`)}
           </span>
         )
         return
@@ -265,7 +302,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         const inner = first.map((fragment: any, j: number) => {
           if (typeof fragment === "string") {
-            return <span key={j}>{fragment}</span>
+            return (
+              <span key={j}>{renderCurlyBraceInnerRed(fragment, `sch-g-${i}-${j}-`)}</span>
+            )
           }
           if (Array.isArray(fragment)) {
             const text = fragment[0]
@@ -274,13 +313,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             const fragColor = fragStyles
               .find((s: any, idx: number, arr: any[]) => arr[idx - 1] === "color")
 
-            // ✅ ПРИОРИТЕТ: если есть цвет в фрагменте — используем его
-            // если нет — используем цвет группы (красный для скобок)
             const finalColor = fragColor || groupColor
 
             return (
               <span key={j} style={finalColor ? { color: finalColor } : undefined}>
-                {text}
+                {renderCurlyBraceInnerRed(text, `sch-x-${i}-${j}-`)}
               </span>
             )
           }
@@ -956,7 +993,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             <h3 className="font-medium text-base leading-snug">
               {currentQuestion.rawSchema
                 ? renderSchemaWithReplacements(currentQuestion.rawSchema)
-                : currentQuestion.title}
+                : renderCurlyBraceInnerRed(currentQuestion.title, "qtitle-")}
               {currentQuestion.required && <span className="text-red-500 ml-1">*</span>}
             </h3>
 
@@ -983,7 +1020,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                             onChange={() => handleAnswer(currentQuestion.id, option.uuid)}
                             className="w-4 h-4 text-primary flex-shrink-0"
                           />
-                          <span className="flex-1 text-sm break-words">{option.text}</span>
+                          <span className="flex-1 text-sm break-words">
+                            {renderCurlyBraceInnerRed(option.text, `mc-${option.uuid}-`)}
+                          </span>
                           {isSelected && (
                             <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
                           )}
@@ -1009,18 +1048,26 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             )}
 
             {currentQuestion.type === "dropdown" && currentQuestion.options && (
-              <select
-                value={answers[currentQuestion.id] || ""}
-                onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
-                className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary bg-background"
+              <Select
+                value={
+                  typeof answers[currentQuestion.id] === "string" &&
+                    answers[currentQuestion.id] !== ""
+                    ? (answers[currentQuestion.id] as string)
+                    : undefined
+                }
+                onValueChange={(v) => handleAnswer(currentQuestion.id, v)}
               >
-                <option value="">— Выберите вариант —</option>
-                {currentQuestion.options.map((option) => (
-                  <option key={option.uuid} value={option.uuid}>
-                    {option.text}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full h-auto min-h-12 py-3 text-sm border-2 rounded-lg focus:ring-2 focus:ring-primary bg-background whitespace-normal [&_[data-slot=select-value]]:text-left [&_[data-slot=select-value]]:whitespace-normal">
+                  <SelectValue placeholder="— Выберите вариант —" />
+                </SelectTrigger>
+                <SelectContent>
+                  {currentQuestion.options.map((option) => (
+                    <SelectItem key={option.uuid} value={option.uuid} className="py-2.5">
+                      {renderCurlyBraceInnerRed(option.text, `dd-${option.uuid}-`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
 
             {currentQuestion.type === "checkbox" && currentQuestion.options && (
@@ -1055,7 +1102,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                           onChange={() => handleCheckboxAnswer(currentQuestion.id, option.uuid)}
                           className="w-4 h-4 text-primary flex-shrink-0"
                         />
-                        <span className="flex-1 text-sm break-words">{option.text}</span>
+                        <span className="flex-1 text-sm break-words">
+                          {renderCurlyBraceInnerRed(option.text, `cb-${option.uuid}-`)}
+                        </span>
                         {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
                       </label>
                       {isOtherOption && isChecked && currentQuestion.otherInputGroupId && (
