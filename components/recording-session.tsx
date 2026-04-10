@@ -49,13 +49,19 @@ interface RecordingSessionProps {
   onComplete: () => void
 }
 
+/** Tally хранит CSS-стили как ["tagfont-weight", ...], ["tagcolor", ...] и т.п. — это не текст */
+function isTallyStyleMarker(s: string): boolean {
+  return /^tag[a-z]/.test(s)
+}
+
 /** Плоский текст из группы фрагментов Tally (как в extractTextFromSchema для одного блока) */
 function extractPlainTextFromSchemaGroup(first: any[]): string {
   if (!Array.isArray(first)) return ""
   return first
     .map((fragment: any) => {
-      if (typeof fragment === "string") return fragment
-      if (Array.isArray(fragment) && typeof fragment[0] === "string") return fragment[0]
+      if (typeof fragment === "string") return isTallyStyleMarker(fragment) ? "" : fragment
+      if (Array.isArray(fragment) && typeof fragment[0] === "string")
+        return isTallyStyleMarker(fragment[0]) ? "" : fragment[0]
       if (Array.isArray(fragment) && Array.isArray(fragment[0]))
         return extractPlainTextFromSchemaGroup(fragment)
       return ""
@@ -299,13 +305,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         if (!Array.isArray(item)) return ""
 
         const first = item[0]
-        if (typeof first === "string") return first
+        if (typeof first === "string") return isTallyStyleMarker(first) ? "" : first
 
         if (Array.isArray(first)) {
           return first
             .map((fragment: any) => {
-              if (typeof fragment === "string") return fragment
-              if (Array.isArray(fragment) && typeof fragment[0] === "string") return fragment[0]
+              if (typeof fragment === "string") return isTallyStyleMarker(fragment) ? "" : fragment
+              if (Array.isArray(fragment) && typeof fragment[0] === "string")
+                return isTallyStyleMarker(fragment[0]) ? "" : fragment[0]
               return ""
             })
             .join("")
@@ -343,6 +350,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       const first = item[0]
 
       if (typeof first === "string") {
+        // Пропускаем Tally-стилевые маркеры ["tagfont-weight", ...], ["tagcolor", ...] и т.п.
+        if (isTallyStyleMarker(first)) return
         const styleArr = item.slice(1)
         const color = styleArr
           .flat(2)
@@ -371,6 +380,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         const inner = first.map((fragment: any, j: number) => {
           if (typeof fragment === "string") {
+            if (isTallyStyleMarker(fragment)) return null
             return (
               <span key={j}>{renderCurlyBraceInnerRed(fragment, `sch-g-${i}-${j}-`)}</span>
             )
@@ -378,6 +388,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           if (Array.isArray(fragment)) {
             const text = fragment[0]
             if (typeof text !== "string") return null
+            if (isTallyStyleMarker(text)) return null
             const fragStyles: any[] = fragment.slice(1).flat(1)
             const fragColor = fragStyles
               .find((s: any, idx: number, arr: any[]) => arr[idx - 1] === "color")
