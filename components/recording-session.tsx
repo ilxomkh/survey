@@ -39,6 +39,8 @@ interface Question {
   multiple?: boolean
   otherOptionUuid?: string
   otherInputGroupId?: string
+  /** UUID вариантов, зафиксированных в Tally (payload.lockInPlace), не перемешивать */
+  checkboxLockUuids?: string[]
 }
 
 interface RecordingSessionProps {
@@ -145,6 +147,21 @@ function shuffleOptionsKeepLast(options: QuestionOption[]): QuestionOption[] {
   return [...head, last]
 }
 
+/** Как в Tally: варианты из lockInPlace не трогаем, остальные перемешиваем; зафиксированные — в конце в исходном порядке */
+function shuffleOptionsWithLocks(options: QuestionOption[], lockUuids: Set<string>): QuestionOption[] {
+  const movable: QuestionOption[] = []
+  const locked: QuestionOption[] = []
+  for (const o of options) {
+    if (lockUuids.has(o.uuid)) locked.push(o)
+    else movable.push(o)
+  }
+  for (let i = movable.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+      ;[movable[i], movable[j]] = [movable[j]!, movable[i]!]
+  }
+  return [...movable, ...locked]
+}
+
 export function RecordingSession({ sessionId, survey, onComplete }: RecordingSessionProps) {
   const [isRecording, setIsRecording] = useState(false)
   const [duration, setDuration] = useState(0)
@@ -220,13 +237,20 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     )
   }, [questions, answers])
 
-  // ─── Q2 (маркетплейсы): случайный порядок вариантов, последний фиксирован ─
+  // ─── Q2 (маркетплейсы): случайный порядок; учитываем Tally lockInPlace или последний вариант ─
   const marketplaceQ2OptionOrder = useMemo(() => {
     const q2 = resolveMarketplaceQ2(questions)
     if (!q2?.options?.length) return null
+    const lockSet = new Set(
+      (q2.checkboxLockUuids ?? []).filter((u) => typeof u === "string" && u.length > 0)
+    )
+    const shuffled =
+      lockSet.size > 0
+        ? shuffleOptionsWithLocks(q2.options, lockSet)
+        : shuffleOptionsKeepLast(q2.options)
     return {
       questionId: q2.id,
-      uuids: shuffleOptionsKeepLast(q2.options).map((o) => o.uuid),
+      uuids: shuffled.map((o) => o.uuid),
     }
   }, [questions])
 
@@ -411,6 +435,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             }))
             .filter((o) => o.text)
           const groupId = optionBlocks[0]?.groupUuid || titleBlock.groupUuid
+          const lockRaw = optionBlocks[0]?.payload?.lockInPlace
+          const checkboxLockUuids = Array.isArray(lockRaw)
+            ? lockRaw.filter((u: unknown) => typeof u === "string")
+            : undefined
 
           const inputTextBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
           const otherOptionBlock = optionBlocks.find(
@@ -433,6 +461,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             required: titleBlock.payload?.isRequired === true,
             otherOptionUuid: otherOptionBlock?.uuid,
             otherInputGroupId: checkboxOtherInputGroupId,
+            checkboxLockUuids,
           }
         }
 
