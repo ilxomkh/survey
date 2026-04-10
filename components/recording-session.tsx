@@ -1314,21 +1314,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 >
                   Назад
                 </Button>
-                {!isLastVisible ? (
+                {!isLastVisible && (
                   <Button
                     onClick={handleNext}
                     disabled={!canGoNext}
                     className="flex-1 h-10 text-sm"
                   >
                     Далее
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => setShowFinishConfirm(true)}
-                    disabled={!canGoNext}
-                    className="flex-1 h-10 text-sm bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-                  >
-                    Завершить опрос
                   </Button>
                 )}
               </div>
