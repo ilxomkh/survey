@@ -63,27 +63,57 @@ function extractPlainTextFromSchemaGroup(first: any[]): string {
     .join("")
 }
 
-function schemaGroupHasHighlightOrMention(first: any[]): boolean {
-  try {
-    const s = JSON.stringify(first)
-    return s.includes('"mention"') || s.includes('"background-color"')
-  } catch {
-    return true
+/**
+ * Склейка фрагментов для `{…}` отключается только если в стилях Tally реально есть
+ * подсветка фона или @mention. Поле `color` одно не считаем — иначе RU-формы с красным
+ * текстом из Tally не склеиваются, `{` и `}` остаются в разных узлах и regex не срабатывает.
+ */
+function tallyStylesHaveMentionOrBackground(styles: any): boolean {
+  if (!Array.isArray(styles)) return false
+  for (const chunk of styles) {
+    if (!Array.isArray(chunk)) continue
+    const head = chunk[0]
+    if (head === "mention" || head === "background-color") return true
+    if (Array.isArray(head) && tallyStylesHaveMentionOrBackground(chunk)) return true
   }
+  return false
+}
+
+function schemaFragmentNeedsGranularRender(fragment: any): boolean {
+  if (!Array.isArray(fragment) || typeof fragment[0] !== "string") return false
+  return tallyStylesHaveMentionOrBackground(fragment.slice(1))
+}
+
+function schemaGroupRequiresPerFragmentStyling(first: any[]): boolean {
+  if (!Array.isArray(first)) return false
+  for (const fr of first) {
+    if (typeof fr === "string") continue
+    if (!Array.isArray(fr)) continue
+    if (typeof fr[0] === "string") {
+      if (schemaFragmentNeedsGranularRender(fr)) return true
+    } else if (schemaGroupRequiresPerFragmentStyling(fr)) return true
+  }
+  return false
+}
+
+/** Полноширинные фигурные скобки (иногда в типографике / копипасте) */
+function normalizeCurlyBraceChars(text: string): string {
+  return text.replace(/\uFF5B/g, "{").replace(/\uFF5D/g, "}")
 }
 
 /** Текст внутри `{…}` — явный красный (виден поверх цвета Tally); скобки — цвет текста вопроса */
 function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
-  const hasCurly = text.includes("{") && text.includes("}")
+  const normalized = normalizeCurlyBraceChars(text)
+  const hasCurly = normalized.includes("{") && normalized.includes("}")
   if (!hasCurly) return text
   const parts: ReactNode[] = []
   const re = /\{([^}]*)\}/g
   let last = 0
   let m: RegExpExecArray | null
   let k = 0
-  while ((m = re.exec(text)) !== null) {
+  while ((m = re.exec(normalized)) !== null) {
     if (m.index > last) {
-      parts.push(<span key={`${keyPrefix}t${k++}`}>{text.slice(last, m.index)}</span>)
+      parts.push(<span key={`${keyPrefix}t${k++}`}>{normalized.slice(last, m.index)}</span>)
     }
     parts.push(
       <Fragment key={`${keyPrefix}b${k++}`}>
@@ -94,8 +124,8 @@ function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
     )
     last = m.index + m[0].length
   }
-  if (last < text.length) {
-    parts.push(<span key={`${keyPrefix}t${k++}`}>{text.slice(last)}</span>)
+  if (last < normalized.length) {
+    parts.push(<span key={`${keyPrefix}t${k++}`}>{normalized.slice(last)}</span>)
   }
   return parts.length > 0 ? <>{parts}</> : text
 }
@@ -344,9 +374,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       }
 
       if (Array.isArray(first)) {
-        const mergedPlain = extractPlainTextFromSchemaGroup(first)
+        const mergedPlain = normalizeCurlyBraceChars(extractPlainTextFromSchemaGroup(first))
         if (
-          !schemaGroupHasHighlightOrMention(first) &&
+          !schemaGroupRequiresPerFragmentStyling(first) &&
           mergedPlain.includes("{") &&
           mergedPlain.includes("}")
         ) {
