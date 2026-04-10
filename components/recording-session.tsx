@@ -64,34 +64,39 @@ function extractPlainTextFromSchemaGroup(first: any[]): string {
 }
 
 /**
- * Склейка фрагментов для `{…}` отключается только если в стилях Tally реально есть
- * подсветка фона или @mention. Поле `color` одно не считаем — иначе RU-формы с красным
- * текстом из Tally не склеиваются, `{` и `}` остаются в разных узлах и regex не срабатывает.
+ * Склейка фрагментов для `{…}` отключаем только при `background-color` (нужен пофрагментный фон).
+ * `mention` не блокируем: @ в тексте уже подменяется в replaceSchemaPlaceholders, отдельного UI
+ * для mention нет — а в узб. Q2 из‑за mention Tally режет `{` и `}` по разным узлам и красное пропадает.
  */
-function tallyStylesHaveMentionOrBackground(styles: any): boolean {
+function tallyStylesHaveBackgroundColor(styles: any): boolean {
   if (!Array.isArray(styles)) return false
   for (const chunk of styles) {
-    if (!Array.isArray(chunk)) continue
-    const head = chunk[0]
-    if (head === "mention" || head === "background-color") return true
-    if (Array.isArray(head) && tallyStylesHaveMentionOrBackground(chunk)) return true
+    if (Array.isArray(chunk)) {
+      const head = chunk[0]
+      if (head === "background-color") return true
+      if (Array.isArray(head) && tallyStylesHaveBackgroundColor(chunk)) return true
+    }
+  }
+  const flat = styles.flat(Infinity) as string[]
+  for (let i = 0; i < flat.length; i++) {
+    if (flat[i] === "background-color") return true
   }
   return false
 }
 
-function schemaFragmentNeedsGranularRender(fragment: any): boolean {
+function schemaFragmentHasBackgroundColor(fragment: any): boolean {
   if (!Array.isArray(fragment) || typeof fragment[0] !== "string") return false
-  return tallyStylesHaveMentionOrBackground(fragment.slice(1))
+  return tallyStylesHaveBackgroundColor(fragment.slice(1))
 }
 
-function schemaGroupRequiresPerFragmentStyling(first: any[]): boolean {
+function schemaGroupHasBackgroundColor(first: any[]): boolean {
   if (!Array.isArray(first)) return false
   for (const fr of first) {
     if (typeof fr === "string") continue
     if (!Array.isArray(fr)) continue
     if (typeof fr[0] === "string") {
-      if (schemaFragmentNeedsGranularRender(fr)) return true
-    } else if (schemaGroupRequiresPerFragmentStyling(fr)) return true
+      if (schemaFragmentHasBackgroundColor(fr)) return true
+    } else if (schemaGroupHasBackgroundColor(fr)) return true
   }
   return false
 }
@@ -376,9 +381,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       if (Array.isArray(first)) {
         const mergedPlain = normalizeCurlyBraceChars(extractPlainTextFromSchemaGroup(first))
         if (
-          !schemaGroupRequiresPerFragmentStyling(first) &&
+          !schemaGroupHasBackgroundColor(first) &&
           mergedPlain.includes("{") &&
-          mergedPlain.includes("}")
+          mergedPlain.includes("}") &&
+          /\{[^}]*\}/.test(mergedPlain)
         ) {
           nodes.push(
             <span key={i}>{renderCurlyBraceInnerRed(mergedPlain, `sch-merge-${i}-`)}</span>
