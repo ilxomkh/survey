@@ -49,9 +49,33 @@ interface RecordingSessionProps {
   onComplete: () => void
 }
 
-/** Текст внутри `{…}` — красным; сами фигурные скобки обычным цветом */
+/** Плоский текст из группы фрагментов Tally (как в extractTextFromSchema для одного блока) */
+function extractPlainTextFromSchemaGroup(first: any[]): string {
+  if (!Array.isArray(first)) return ""
+  return first
+    .map((fragment: any) => {
+      if (typeof fragment === "string") return fragment
+      if (Array.isArray(fragment) && typeof fragment[0] === "string") return fragment[0]
+      if (Array.isArray(fragment) && Array.isArray(fragment[0]))
+        return extractPlainTextFromSchemaGroup(fragment)
+      return ""
+    })
+    .join("")
+}
+
+function schemaGroupHasHighlightOrMention(first: any[]): boolean {
+  try {
+    const s = JSON.stringify(first)
+    return s.includes('"mention"') || s.includes('"background-color"')
+  } catch {
+    return true
+  }
+}
+
+/** Текст внутри `{…}` — явный красный (виден поверх цвета Tally); скобки — цвет текста вопроса */
 function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
-  if (!text.includes("{")) return text
+  const hasCurly = text.includes("{") && text.includes("}")
+  if (!hasCurly) return text
   const parts: ReactNode[] = []
   const re = /\{([^}]*)\}/g
   let last = 0
@@ -63,9 +87,9 @@ function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
     }
     parts.push(
       <Fragment key={`${keyPrefix}b${k++}`}>
-        {"{"}
-        <span className="text-red-600 dark:text-red-400">{m[1]}</span>
-        {"}"}
+        <span className="text-foreground">{"{"}</span>
+        <span className="font-semibold !text-[#b91c1c] dark:!text-[#ff5252]">{m[1]}</span>
+        <span className="text-foreground">{"}"}</span>
       </Fragment>
     )
     last = m.index + m[0].length
@@ -320,6 +344,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       }
 
       if (Array.isArray(first)) {
+        const mergedPlain = extractPlainTextFromSchemaGroup(first)
+        if (
+          !schemaGroupHasHighlightOrMention(first) &&
+          mergedPlain.includes("{") &&
+          mergedPlain.includes("}")
+        ) {
+          nodes.push(
+            <span key={i}>{renderCurlyBraceInnerRed(mergedPlain, `sch-merge-${i}-`)}</span>
+          )
+          return
+        }
+
         const groupStyleArr: any[] = Array.isArray(item[1]) ? item[1] : []
         const groupColor = groupStyleArr
           .flat(2)
