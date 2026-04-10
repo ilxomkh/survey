@@ -75,15 +75,13 @@ function normalizeCurlyBraceChars(text: string): string {
   return text.replace(/\uFF5B/g, "{").replace(/\uFF5D/g, "}")
 }
 
-/** Текст внутри `{…}` или `(…)` — явный красный; скобки — цвет текста вопроса */
+/** Текст внутри `{…}` — явный красный (виден поверх цвета Tally); скобки — цвет текста вопроса */
 function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
   const normalized = normalizeCurlyBraceChars(text)
-  const hasBracket =
-    (normalized.includes("{") && normalized.includes("}")) ||
-    (normalized.includes("(") && normalized.includes(")"))
-  if (!hasBracket) return text
+  const hasCurly = normalized.includes("{") && normalized.includes("}")
+  if (!hasCurly) return text
   const parts: ReactNode[] = []
-  const re = /\{([^}]*)\}|\(([^)]*)\)/g
+  const re = /\{([^}]*)\}/g
   let last = 0
   let m: RegExpExecArray | null
   let k = 0
@@ -91,15 +89,11 @@ function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
     if (m.index > last) {
       parts.push(<span key={`${keyPrefix}t${k++}`}>{normalized.slice(last, m.index)}</span>)
     }
-    const isCurly = m[0].startsWith("{")
-    const inner = isCurly ? m[1] : m[2]
-    const open = isCurly ? "{" : "("
-    const close = isCurly ? "}" : ")"
     parts.push(
       <Fragment key={`${keyPrefix}b${k++}`}>
-        <span className="text-foreground">{open}</span>
-        <span className="font-semibold !text-[#b91c1c] dark:!text-[#ff5252]">{inner}</span>
-        <span className="text-foreground">{close}</span>
+        <span className="text-foreground">{"{"}</span>
+        <span className="font-semibold !text-[#b91c1c] dark:!text-[#ff5252]">{m[1]}</span>
+        <span className="text-foreground">{"}"}</span>
       </Fragment>
     )
     last = m.index + m[0].length
@@ -323,18 +317,15 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       .trim()
   }
 
-  // Рендер safeHTMLSchema; `{плейсхолдер}` и `(подсказка)` — красный текст внутри скобок.
-  // Pre-scan: если скобки обнаружены где угодно в схеме (даже разбитые по разным фрагментам
+  // Рендер safeHTMLSchema; `{плейсхолдер}` — красный текст внутри скобок.
+  // Pre-scan: если {…} обнаружены где угодно в схеме (даже разбитые по разным фрагментам
   // Tally через mention/color/background-color), склеиваем весь текст и рендерим целиком —
   // это гарантирует красный цвет для ЛЮБОГО будущего опросника.
   const renderSchema = (schema: any): React.ReactNode => {
     if (!schema || !Array.isArray(schema)) return null
 
     const fullMerged = normalizeCurlyBraceChars(extractTextFromSchema(schema))
-    if (
-      (fullMerged.includes("{") && fullMerged.includes("}") && /\{[^}]*\}/.test(fullMerged)) ||
-      (fullMerged.includes("(") && fullMerged.includes(")") && /\([^)]*\)/.test(fullMerged))
-    ) {
+    if (fullMerged.includes("{") && fullMerged.includes("}") && /\{[^}]*\}/.test(fullMerged)) {
       return renderCurlyBraceInnerRed(fullMerged, "sch-prescan-")
     }
 
@@ -366,10 +357,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
       if (Array.isArray(first)) {
         const mergedPlain = normalizeCurlyBraceChars(extractPlainTextFromSchemaGroup(first))
-        if (
-          (mergedPlain.includes("{") && mergedPlain.includes("}") && /\{[^}]*\}/.test(mergedPlain)) ||
-          (mergedPlain.includes("(") && mergedPlain.includes(")") && /\([^)]*\)/.test(mergedPlain))
-        ) {
+        if (mergedPlain.includes("{") && mergedPlain.includes("}") && /\{[^}]*\}/.test(mergedPlain)) {
           nodes.push(
             <span key={i}>{renderCurlyBraceInnerRed(mergedPlain, `sch-merge-${i}-`)}</span>
           )
