@@ -75,13 +75,15 @@ function normalizeCurlyBraceChars(text: string): string {
   return text.replace(/\uFF5B/g, "{").replace(/\uFF5D/g, "}")
 }
 
-/** Текст внутри `{…}` — явный красный (виден поверх цвета Tally); скобки — цвет текста вопроса */
+/** Текст внутри `{…}` или `(…)` — явный красный; скобки — цвет текста вопроса */
 function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
   const normalized = normalizeCurlyBraceChars(text)
-  const hasCurly = normalized.includes("{") && normalized.includes("}")
-  if (!hasCurly) return text
+  const hasBracket =
+    (normalized.includes("{") && normalized.includes("}")) ||
+    (normalized.includes("(") && normalized.includes(")"))
+  if (!hasBracket) return text
   const parts: ReactNode[] = []
-  const re = /\{([^}]*)\}/g
+  const re = /\{([^}]*)\}|\(([^)]*)\)/g
   let last = 0
   let m: RegExpExecArray | null
   let k = 0
@@ -89,11 +91,15 @@ function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
     if (m.index > last) {
       parts.push(<span key={`${keyPrefix}t${k++}`}>{normalized.slice(last, m.index)}</span>)
     }
+    const isCurly = m[0].startsWith("{")
+    const inner = isCurly ? m[1] : m[2]
+    const open = isCurly ? "{" : "("
+    const close = isCurly ? "}" : ")"
     parts.push(
       <Fragment key={`${keyPrefix}b${k++}`}>
-        <span className="text-foreground">{"{"}</span>
-        <span className="font-semibold !text-[#b91c1c] dark:!text-[#ff5252]">{m[1]}</span>
-        <span className="text-foreground">{"}"}</span>
+        <span className="text-foreground">{open}</span>
+        <span className="font-semibold !text-[#b91c1c] dark:!text-[#ff5252]">{inner}</span>
+        <span className="text-foreground">{close}</span>
       </Fragment>
     )
     last = m.index + m[0].length
@@ -349,7 +355,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
       if (Array.isArray(first)) {
         const mergedPlain = normalizeCurlyBraceChars(extractPlainTextFromSchemaGroup(first))
-        if (mergedPlain.includes("{") && mergedPlain.includes("}") && /\{[^}]*\}/.test(mergedPlain)) {
+        if (
+          (mergedPlain.includes("{") && mergedPlain.includes("}") && /\{[^}]*\}/.test(mergedPlain)) ||
+          (mergedPlain.includes("(") && mergedPlain.includes(")") && /\([^)]*\)/.test(mergedPlain))
+        ) {
           nodes.push(
             <span key={i}>{renderCurlyBraceInnerRed(mergedPlain, `sch-merge-${i}-`)}</span>
           )
