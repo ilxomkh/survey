@@ -323,9 +323,20 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       .trim()
   }
 
-  // Рендер safeHTMLSchema; `{плейсхолдер}` — красный текст внутри скобок
+  // Рендер safeHTMLSchema; `{плейсхолдер}` и `(подсказка)` — красный текст внутри скобок.
+  // Pre-scan: если скобки обнаружены где угодно в схеме (даже разбитые по разным фрагментам
+  // Tally через mention/color/background-color), склеиваем весь текст и рендерим целиком —
+  // это гарантирует красный цвет для ЛЮБОГО будущего опросника.
   const renderSchema = (schema: any): React.ReactNode => {
     if (!schema || !Array.isArray(schema)) return null
+
+    const fullMerged = normalizeCurlyBraceChars(extractTextFromSchema(schema))
+    if (
+      (fullMerged.includes("{") && fullMerged.includes("}") && /\{[^}]*\}/.test(fullMerged)) ||
+      (fullMerged.includes("(") && fullMerged.includes(")") && /\([^)]*\)/.test(fullMerged))
+    ) {
+      return renderCurlyBraceInnerRed(fullMerged, "sch-prescan-")
+    }
 
     const nodes: React.ReactNode[] = []
 
