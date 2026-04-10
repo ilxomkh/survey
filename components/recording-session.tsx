@@ -64,42 +64,11 @@ function extractPlainTextFromSchemaGroup(first: any[]): string {
 }
 
 /**
- * Склейка фрагментов для `{…}` отключаем только при `background-color` (нужен пофрагментный фон).
- * `mention` не блокируем: @ в тексте уже подменяется в replaceSchemaPlaceholders, отдельного UI
- * для mention нет — а в узб. Q2 из‑за mention Tally режет `{` и `}` по разным узлам и красное пропадает.
+ * Если в объединённом тексте есть замкнутая пара `{…}`, склеиваем фрагменты Tally и красим
+ * содержимое скобок. Иначе (mention, color, background-color) строка режется — `{` и `}` в
+ * разных узлах, regex не срабатывает (чёрный текст в RU Q3, узб. Q2). Подсветка фона Tally на
+ * таком заголовке может не сохраниться — приоритет у читаемых инструкций в `{…}`.
  */
-function tallyStylesHaveBackgroundColor(styles: any): boolean {
-  if (!Array.isArray(styles)) return false
-  for (const chunk of styles) {
-    if (Array.isArray(chunk)) {
-      const head = chunk[0]
-      if (head === "background-color") return true
-      if (Array.isArray(head) && tallyStylesHaveBackgroundColor(chunk)) return true
-    }
-  }
-  const flat = styles.flat(Infinity) as string[]
-  for (let i = 0; i < flat.length; i++) {
-    if (flat[i] === "background-color") return true
-  }
-  return false
-}
-
-function schemaFragmentHasBackgroundColor(fragment: any): boolean {
-  if (!Array.isArray(fragment) || typeof fragment[0] !== "string") return false
-  return tallyStylesHaveBackgroundColor(fragment.slice(1))
-}
-
-function schemaGroupHasBackgroundColor(first: any[]): boolean {
-  if (!Array.isArray(first)) return false
-  for (const fr of first) {
-    if (typeof fr === "string") continue
-    if (!Array.isArray(fr)) continue
-    if (typeof fr[0] === "string") {
-      if (schemaFragmentHasBackgroundColor(fr)) return true
-    } else if (schemaGroupHasBackgroundColor(fr)) return true
-  }
-  return false
-}
 
 /** Полноширинные фигурные скобки (иногда в типографике / копипасте) */
 function normalizeCurlyBraceChars(text: string): string {
@@ -380,12 +349,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
       if (Array.isArray(first)) {
         const mergedPlain = normalizeCurlyBraceChars(extractPlainTextFromSchemaGroup(first))
-        if (
-          !schemaGroupHasBackgroundColor(first) &&
-          mergedPlain.includes("{") &&
-          mergedPlain.includes("}") &&
-          /\{[^}]*\}/.test(mergedPlain)
-        ) {
+        if (mergedPlain.includes("{") && mergedPlain.includes("}") && /\{[^}]*\}/.test(mergedPlain)) {
           nodes.push(
             <span key={i}>{renderCurlyBraceInnerRed(mergedPlain, `sch-merge-${i}-`)}</span>
           )
