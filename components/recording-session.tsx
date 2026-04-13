@@ -78,7 +78,8 @@ function formatQ3ChoiceAsDisplay(q3: Question | undefined, answersMap: Answers):
 }
 
 /**
- * Для шкалы NPS (linear_scale) в @ подставляем выбранный в Q3 вариант; иначе — старая логика Q2/Q3 «другой».
+ * Для вопросов ПОСЛЕ Q3 «чаще всего» в @ подставляем выбранный в Q3 вариант.
+ * Для вопросов до Q3 (или если Q3 не найден) — старая логика Q2/Q3 «другой».
  */
 function getAtMentionReplacement(
   questions: Question[],
@@ -87,12 +88,17 @@ function getAtMentionReplacement(
   current: Question | undefined
 ): string | null {
   const legacy = getLegacyOtherMentionText(questions, answersMap)
-  if (!current || current.type !== "linear_scale") return legacy
+  if (!current) return legacy
 
   const q2Market = resolveMarketplaceQ2(questions)
   const q3Idx = resolveFrequencyQ3Index(questions, q2Market)
   const q3Template = q3Idx >= 0 ? questions[q3Idx] : undefined
   if (!q3Template) return legacy
+
+  // Определяем индекс текущего вопроса в questions
+  const currentIdx = questions.findIndex((q) => q.id === current.id)
+  // Только для вопросов, стоящих ПОСЛЕ Q3 по порядку
+  if (currentIdx <= q3Idx) return legacy
 
   const q3Live = visibleQuestions.find((q) => q.id === q3Template.id) ?? q3Template
   const q3Label = formatQ3ChoiceAsDisplay(q3Live, answersMap)
