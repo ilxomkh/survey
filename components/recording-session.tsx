@@ -743,6 +743,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         return {
           id: groupId,
           title: questionText,
+          rawSchema,
           type: "text",
           required: titleBlock.payload?.isRequired === true,
         }
