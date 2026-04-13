@@ -77,9 +77,33 @@ function formatQ3ChoiceAsDisplay(q3: Question | undefined, answersMap: Answers):
   return String(v)
 }
 
+/** Вопрос Q3 «чаще всего»: сначала индекс в полном списке, иначе первый MC/dropdown после Q2 в видимой цепочке. */
+function findQ3FrequencyQuestion(
+  questions: Question[],
+  visibleQuestions: Question[]
+): Question | undefined {
+  const q2 = resolveMarketplaceQ2(questions)
+  const idx = resolveFrequencyQ3Index(questions, q2)
+  if (idx >= 0) return questions[idx]
+
+  const q2Ref = q2 ? visibleQuestions.find((q) => q.id === q2.id) ?? q2 : undefined
+  const i2 = q2Ref ? visibleQuestions.findIndex((q) => q.id === q2Ref.id) : -1
+  if (i2 >= 0) {
+    for (let i = i2 + 1; i < visibleQuestions.length; i++) {
+      const q = visibleQuestions[i]!
+      if (q.type === "multiple_choice" || q.type === "dropdown") return q
+    }
+  }
+  return visibleQuestions.find(
+    (q) =>
+      (q.type === "multiple_choice" || q.type === "dropdown") &&
+      titleMatchesAnyFragment(q.title, Q3_FREQUENCY_TITLE_FRAGMENTS)
+  )
+}
+
 /**
- * Для вопросов ПОСЛЕ Q3 «чаще всего» в @ подставляем выбранный в Q3 вариант.
- * Для вопросов до Q3 (или если Q3 не найден) — старая логика Q2/Q3 «другой».
+ * После шага Q3 «чаще всего» (по visibleQuestions) в @ подставляем подпись выбора из Q3.
+ * На шаге Q3 и раньше — только текст «другой» Q2/Q3 (legacy).
  */
 function getAtMentionReplacement(
   questions: Question[],
@@ -90,15 +114,12 @@ function getAtMentionReplacement(
   const legacy = getLegacyOtherMentionText(questions, answersMap)
   if (!current) return legacy
 
-  const q2Market = resolveMarketplaceQ2(questions)
-  const q3Idx = resolveFrequencyQ3Index(questions, q2Market)
-  const q3Template = q3Idx >= 0 ? questions[q3Idx] : undefined
+  const q3Template = findQ3FrequencyQuestion(questions, visibleQuestions)
   if (!q3Template) return legacy
 
-  // Определяем индекс текущего вопроса в questions
-  const currentIdx = questions.findIndex((q) => q.id === current.id)
-  // Только для вопросов, стоящих ПОСЛЕ Q3 по порядку
-  if (currentIdx <= q3Idx) return legacy
+  const q3VisIdx = visibleQuestions.findIndex((q) => q.id === q3Template.id)
+  const curVisIdx = visibleQuestions.findIndex((q) => q.id === current.id)
+  if (q3VisIdx < 0 || curVisIdx < 0 || curVisIdx <= q3VisIdx) return legacy
 
   const q3Live = visibleQuestions.find((q) => q.id === q3Template.id) ?? q3Template
   const q3Label = formatQ3ChoiceAsDisplay(q3Live, answersMap)
@@ -106,20 +127,9 @@ function getAtMentionReplacement(
   return legacy
 }
 
-function applyAtMentionPlain(text: string, mention: string | null): string {
-  if (!mention || !text.includes("@")) return text
-  return text.replace(/@[^@]*/g, mention)
-}
-
-/** Любой вложенный узел safeHTMLSchema: Tally часто режет `@…` по нескольким массивам — поверхностный map пропускает mention. */
-function applyAtMentionDeepInSchema(node: any, mention: string): any {
-  if (typeof node === "string") {
-    return node.includes("@") ? node.replace(/@[^@]*/g, mention) : node
-  }
-  if (Array.isArray(node)) {
-    return node.map((child) => applyAtMentionDeepInSchema(child, mention))
-  }
-  return node
+function applyAtMentionPlain(text: string, mention: string | null | undefined): string {
+  if (mention == null || String(mention).trim() === "" || !text.includes("@")) return text
+  return text.replace(/@[^@]*/g, String(mention).trim())
 }
 
 interface RecordingSessionProps {
@@ -420,14 +430,23 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   // Pre-scan: если {…} обнаружены где угодно в схеме (даже разбитые по разным фрагментам
   // Tally через mention/color/background-color), склеиваем весь текст и рендерим целиком —
   // это гарантирует красный цвет для ЛЮБОГО будущего опросника.
-  const renderSchema = (schema: any): React.ReactNode => {
+  const renderSchema = (schema: any, atMention?: string | null): React.ReactNode => {
     if (!schema || !Array.isArray(schema)) return null
+
+    const mention =
+      atMention != null && String(atMention).trim() !== "" ? String(atMention).trim() : null
 
     const fullMerged = sanitizeTallyTextLeak(
       normalizeCurlyBraceChars(extractTextFromSchema(schema))
     )
-    if (fullMerged.includes("{") && fullMerged.includes("}") && /\{[^}]*\}/.test(fullMerged)) {
-      return renderCurlyBraceInnerRed(fullMerged, "sch-prescan-")
+    const displayMerged = mention ? applyAtMentionPlain(fullMerged, mention) : fullMerged
+
+    if (
+      displayMerged.includes("{") &&
+      displayMerged.includes("}") &&
+      /\{[^}]*\}/.test(displayMerged)
+    ) {
+      return renderCurlyBraceInnerRed(displayMerged, "sch-prescan-")
     }
 
     // Tally хранит открывающую { как чистый вложенный массив-маркер (напр. [["tagmention"]]) —
@@ -474,7 +493,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           fullMerged.slice(0, insertAt) + "{" + fullMerged.slice(insertAt)
         )
         if (/\{[^}]*\}/.test(patchedMerged)) {
-          return renderCurlyBraceInnerRed(patchedMerged, "sch-prescan-")
+          const patchedDisplay = mention
+            ? applyAtMentionPlain(patchedMerged, mention)
+            : patchedMerged
+          return renderCurlyBraceInnerRed(patchedDisplay, "sch-prescan-")
         }
       }
     }
@@ -485,7 +507,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       if (typeof item === "string") {
         if (isTallyStyleMarker(item)) return
         nodes.push(
-          <span key={i}>{renderCurlyBraceInnerRed(item, `sch-s-${i}-`)}</span>
+          <span key={i}>
+            {renderCurlyBraceInnerRed(applyAtMentionPlain(item, mention), `sch-s-${i}-`)}
+          </span>
         )
         return
       }
@@ -502,7 +526,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           .find((s: any, idx: number, arr: any[]) => arr[idx - 1] === "color")
         nodes.push(
           <span key={i} style={color ? { color } : undefined}>
-            {renderCurlyBraceInnerRed(first, `sch-f-${i}-`)}
+            {renderCurlyBraceInnerRed(applyAtMentionPlain(first, mention), `sch-f-${i}-`)}
           </span>
         )
         return
@@ -510,9 +534,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
       if (Array.isArray(first)) {
         const mergedPlain = normalizeCurlyBraceChars(extractPlainTextFromSchemaGroup(first))
-        if (mergedPlain.includes("{") && mergedPlain.includes("}") && /\{[^}]*\}/.test(mergedPlain)) {
+        const mergedPlainAt = mention ? applyAtMentionPlain(mergedPlain, mention) : mergedPlain
+        if (
+          mergedPlainAt.includes("{") &&
+          mergedPlainAt.includes("}") &&
+          /\{[^}]*\}/.test(mergedPlainAt)
+        ) {
           nodes.push(
-            <span key={i}>{renderCurlyBraceInnerRed(mergedPlain, `sch-merge-${i}-`)}</span>
+            <span key={i}>{renderCurlyBraceInnerRed(mergedPlainAt, `sch-merge-${i}-`)}</span>
           )
           return
         }
@@ -526,7 +555,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           if (typeof fragment === "string") {
             if (isTallyStyleMarker(fragment)) return null
             return (
-              <span key={j}>{renderCurlyBraceInnerRed(fragment, `sch-g-${i}-${j}-`)}</span>
+              <span key={j}>
+                {renderCurlyBraceInnerRed(applyAtMentionPlain(fragment, mention), `sch-g-${i}-${j}-`)}
+              </span>
             )
           }
           if (Array.isArray(fragment)) {
@@ -541,7 +572,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
             return (
               <span key={j} style={finalColor ? { color: finalColor } : undefined}>
-                {renderCurlyBraceInnerRed(text, `sch-x-${i}-${j}-`)}
+                {renderCurlyBraceInnerRed(applyAtMentionPlain(text, mention), `sch-x-${i}-${j}-`)}
               </span>
             )
           }
@@ -794,32 +825,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     }
   }, [questions, answers])
 
-  // @ в заголовках safeHTMLSchema: после Q3 «чаще всего» — подпись выбора из Q3; до Q3 — текст «другой» Q2/Q3 (getAtMentionReplacement).
-  const replaceSchemaPlaceholders = (
-    schema: any,
-    answersMap: Answers,
-    forQuestionId?: string
-  ): any => {
-    if (!schema || !Array.isArray(schema)) return schema
-
+  // @ в safeHTMLSchema: подстановка на **склеенной** строке внутри renderSchema (глубокая правка массива ломала extractTextFromSchema → один «обрубок» текста на последнем шаге).
+  const renderSchemaWithReplacements = (schema: any, forQuestionId?: string): React.ReactNode => {
     const cur = forQuestionId
       ? visibleQuestions.find((q) => q.id === forQuestionId)
       : undefined
-    const otherMentionText = getAtMentionReplacement(
-      questions,
-      visibleQuestions,
-      answersMap,
-      cur
-    )
-
-    if (!otherMentionText) return schema
-    return applyAtMentionDeepInSchema(schema, otherMentionText)
-  }
-
-  // ✅ ФИХ 5: Рендер с заменой @упоминаний
-  const renderSchemaWithReplacements = (schema: any, forQuestionId?: string): React.ReactNode => {
-    const replacedSchema = replaceSchemaPlaceholders(schema, answers, forQuestionId)
-    return renderSchema(replacedSchema)
+    const mention = getAtMentionReplacement(questions, visibleQuestions, answers, cur)
+    return renderSchema(schema, mention)
   }
 
   // ─── Инициализация записи и геолокации ─────────────────────
