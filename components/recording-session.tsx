@@ -793,9 +793,23 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             type: q.type,
           })))
           console.log("[DEBUG] Engine rules count:", engine.rules.length)
+
+          if (extractedQuestions.length === 0) {
+            const blockTypes = rawBlocks.map((b: any) => `${b.type}/${b.groupType}`).join(", ")
+            console.warn("[RecordingSession] 0 вопросов из", rawBlocks.length, "блоков. Типы:", blockTypes)
+            const titleBlocks = rawBlocks.filter((b: any) => b.type === "TITLE" && b.groupType === "QUESTION")
+            console.warn("[RecordingSession] TITLE+QUESTION блоков:", titleBlocks.length)
+            if (titleBlocks.length > 0) {
+              console.warn("[RecordingSession] Первый TITLE блок:", JSON.stringify(titleBlocks[0]).slice(0, 400))
+            }
+          }
+        } else if (surveyData) {
+          console.warn("[RecordingSession] surveyData получен, но blocks отсутствует. Ключи:", Object.keys(surveyData as object))
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("[RecordingSession] Ошибка загрузки вопросов:", err)
+        const msg = err?.message || String(err) || "Ошибка загрузки вопросов"
+        setError(msg)
       } finally {
         setLoadingQuestions(false)
       }
