@@ -336,6 +336,32 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       return renderCurlyBraceInnerRed(fullMerged, "sch-prescan-")
     }
 
+    // Tally хранит открывающую { как чистый вложенный массив-маркер (напр. [["tagmention"]]) —
+    // extractTextFromSchema его фильтрует, и { теряется. Закрывающая } при этом лежит в
+    // отдельном текстовом узле и проходит нормально.
+    // Второй проход: заменяем такие «пустые» nested-массивы на { и пробуем prescan ещё раз.
+    if (!fullMerged.includes("{") && fullMerged.includes("}")) {
+      const patchedMerged = normalizeCurlyBraceChars(
+        schema
+          .map((item: any): string => {
+            if (typeof item === "string") return item
+            if (!Array.isArray(item)) return ""
+            const f = item[0]
+            if (typeof f === "string") return isTallyStyleMarker(f) ? "" : f
+            if (Array.isArray(f)) {
+              const plain = extractPlainTextFromSchemaGroup(f)
+              // Чистый маркер без текста → неявная { (Tally mention/variable start)
+              return plain.trim().length === 0 ? "{" : plain
+            }
+            return ""
+          })
+          .join("")
+      )
+      if (patchedMerged.includes("{") && /\{[^}]*\}/.test(patchedMerged)) {
+        return renderCurlyBraceInnerRed(patchedMerged, "sch-prescan-")
+      }
+    }
+
     const nodes: React.ReactNode[] = []
 
     schema.forEach((item: any, i: number) => {
