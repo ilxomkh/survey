@@ -1143,7 +1143,23 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 onValueChange={(v) => handleAnswer(currentQuestion.id, v)}
               >
                 <SelectTrigger className="w-full h-auto min-h-12 py-3 text-sm border-2 rounded-lg focus:ring-2 focus:ring-primary bg-background whitespace-normal [&_[data-slot=select-value]]:text-left [&_[data-slot=select-value]]:whitespace-normal">
-                  <SelectValue placeholder="— Выберите вариант —" />
+                  {(() => {
+                    const selUuid =
+                      typeof answers[currentQuestion.id] === "string" &&
+                      answers[currentQuestion.id] !== ""
+                        ? (answers[currentQuestion.id] as string)
+                        : undefined
+                    const selOption = selUuid
+                      ? currentQuestion.options!.find((o) => o.uuid === selUuid)
+                      : undefined
+                    return selOption ? (
+                      <span data-slot="select-value">
+                        {renderCurlyBraceInnerRed(selOption.text, "dd-trg-")}
+                      </span>
+                    ) : (
+                      <SelectValue placeholder="— Выберите вариант —" />
+                    )
+                  })()}
                 </SelectTrigger>
                 <SelectContent>
                   {currentQuestion.options.map((option) => (
