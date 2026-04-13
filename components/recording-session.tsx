@@ -758,7 +758,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         const token = localStorage.getItem("auth_token")
         if (token) apiClient.setToken(token)
 
-        const surveyData = await apiClient.getSurveyQuestions(survey.id, sessionId)
+        const surveyData = await Promise.race([
+          apiClient.getSurveyQuestions(survey.id, sessionId),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(locale === "uz" ? "Savollar yuklanmadi (timeout)" : "Вопросы не загрузились (timeout)")), 15000)
+          ),
+        ])
 
         let extractedQuestions: Question[] = []
         let rawBlocks: any[] = []
@@ -816,7 +821,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     }
 
     loadQuestions()
-  }, [survey.id, sessionId])
+  }, [survey.id, sessionId, locale])
 
   // Сброс ответа Q3, если соответствующий вариант снят в Q2
   useEffect(() => {
@@ -916,7 +921,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         startWatching(true)
         locationIntervalRef.current = watchId as any
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const stream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({ audio: true }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(ui.micLoading.replace("...", "") + " timeout")), 12000)
+          ),
+        ])
         streamRef.current = stream
         setMicStatus(ui.micOk)
 
