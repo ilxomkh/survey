@@ -111,6 +111,17 @@ function applyAtMentionPlain(text: string, mention: string | null): string {
   return text.replace(/@[^@]*/g, mention)
 }
 
+/** Любой вложенный узел safeHTMLSchema: Tally часто режет `@…` по нескольким массивам — поверхностный map пропускает mention. */
+function applyAtMentionDeepInSchema(node: any, mention: string): any {
+  if (typeof node === "string") {
+    return node.includes("@") ? node.replace(/@[^@]*/g, mention) : node
+  }
+  if (Array.isArray(node)) {
+    return node.map((child) => applyAtMentionDeepInSchema(child, mention))
+  }
+  return node
+}
+
 interface RecordingSessionProps {
   sessionId: string
   survey: Survey
@@ -783,7 +794,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     }
   }, [questions, answers])
 
-  // ✅ ФИХ 4: @ в заголовках — для linear_scale (Q4 NPS) подставляем выбор из Q3 «чаще всего»; иначе Q2/Q3 «другой»
+  // @ в заголовках safeHTMLSchema: после Q3 «чаще всего» — подпись выбора из Q3; до Q3 — текст «другой» Q2/Q3 (getAtMentionReplacement).
   const replaceSchemaPlaceholders = (
     schema: any,
     answersMap: Answers,
@@ -801,37 +812,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       cur
     )
 
-    return schema.map((item: any) => {
-      if (typeof item === "string") return item
-      if (!Array.isArray(item)) return item
-
-      const first = item[0]
-
-      if (typeof first === "string" && first.includes("@")) {
-        if (otherMentionText) {
-          return [first.replace(/@[^@]+/g, otherMentionText), ...item.slice(1)]
-        }
-        return item
-      }
-
-      if (Array.isArray(first)) {
-        const replacedInner = first.map((fragment: any) => {
-          if (typeof fragment === "string") return fragment
-          if (Array.isArray(fragment)) {
-            const text = fragment[0]
-            if (typeof text === "string" && text.includes("@") && otherMentionText) {
-              return [text.replace(/@[^@]+/g, otherMentionText), ...fragment.slice(1)]
-            }
-            return fragment
-          }
-          return fragment
-        })
-
-        return [replacedInner, ...item.slice(1)]
-      }
-
-      return item
-    })
+    if (!otherMentionText) return schema
+    return applyAtMentionDeepInSchema(schema, otherMentionText)
   }
 
   // ✅ ФИХ 5: Рендер с заменой @упоминаний
@@ -1218,7 +1200,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           </p>
         ) : currentQuestion ? (
           <div className="space-y-4">
-            {/* ✅ ФИХ 8: Заголовок с заменой @ (NPS: выбор из Q3 «чаще всего») */}
+            {/* Заголовок: rawSchema — глубокая замена @; плоский title — applyAtMentionPlain + getAtMentionReplacement */}
             <h3 className="font-medium text-base leading-snug">
               {currentQuestion.rawSchema
                 ? renderSchemaWithReplacements(currentQuestion.rawSchema, currentQuestion.id)
