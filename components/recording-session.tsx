@@ -45,6 +45,80 @@ interface Question {
   checkboxLockUuids?: string[]
 }
 
+function briefQuestionTitleForSummary(title: string, maxLen: number): string {
+  const oneLine = title.replace(/\s+/g, " ").trim()
+  if (oneLine.length <= maxLen) return oneLine
+  return `${oneLine.slice(0, Math.max(1, maxLen - 1))}…`
+}
+
+/** Текст ответа для сводки на последнем шаге (не меняет условную логику Tally). */
+function formatAnswerForPriorSummary(
+  q: Question,
+  answersMap: Answers,
+  yesLabel: string,
+  noLabel: string
+): string | null {
+  const val = answersMap[q.id]
+  if (val === undefined || val === null || val === "") return null
+  if (typeof val === "number" && Number.isNaN(val)) return null
+
+  switch (q.type) {
+    case "linear_scale":
+    case "number":
+      return String(val)
+    case "yes_no":
+      if (val === "yes") return yesLabel
+      if (val === "no") return noLabel
+      return String(val)
+    case "multiple_choice":
+    case "dropdown": {
+      if (!q.options) return String(val)
+      const opt = q.options.find((o) => o.uuid === val)
+      return opt?.text?.trim() || String(val)
+    }
+    case "checkbox": {
+      if (!Array.isArray(val) || !q.options) return null
+      const parts: string[] = []
+      for (const uuid of val) {
+        const opt = q.options.find((o) => o.uuid === uuid)
+        if (!opt?.text) continue
+        if (uuid === q.otherOptionUuid && q.otherInputGroupId) {
+          const extra = answersMap[q.otherInputGroupId]
+          const t = extra != null && String(extra).trim() !== "" ? String(extra).trim() : ""
+          parts.push(t ? `${opt.text}: ${t}` : opt.text)
+        } else {
+          parts.push(opt.text)
+        }
+      }
+      return parts.length > 0 ? parts.join("; ") : null
+    }
+    case "text":
+      return typeof val === "string" && val.trim() ? val.trim() : null
+    default:
+      return String(val)
+  }
+}
+
+function buildLastQuestionPriorSummaryText(
+  visibleQuestions: Question[],
+  answersMap: Answers,
+  intro: string,
+  yesLabel: string,
+  noLabel: string
+): string {
+  if (visibleQuestions.length < 2) return ""
+  const lines: string[] = []
+  for (let i = 0; i < visibleQuestions.length - 1; i++) {
+    const q = visibleQuestions[i]!
+    const formatted = formatAnswerForPriorSummary(q, answersMap, yesLabel, noLabel)
+    if (!formatted) continue
+    const label = briefQuestionTitleForSummary(q.title, 76)
+    lines.push(`${i + 1}) ${label}\n   → ${formatted}`)
+  }
+  if (lines.length === 0) return ""
+  return `${intro}\n\n${lines.join("\n\n")}`
+}
+
 interface RecordingSessionProps {
   sessionId: string
   survey: Survey
@@ -175,6 +249,72 @@ function resolveFrequencyQ3Index(questions: Question[], q2: Question | undefined
       q.type === "multiple_choice" &&
       titleMatchesAnyFragment(q.title, Q3_FREQUENCY_TITLE_FRAGMENTS)
   )
+}
+
+function isOtherAnswerSelected(q: Question, answersMap: Answers): boolean {
+  if (!q.otherOptionUuid || !q.otherInputGroupId) return false
+  const v = answersMap[q.id]
+  switch (q.type) {
+    case "multiple_choice":
+    case "dropdown":
+      return v === q.otherOptionUuid
+    case "checkbox":
+      return Array.isArray(v) && v.includes(q.otherOptionUuid)
+    default:
+      return false
+  }
+}
+
+/** Последний непустой текст из поля «другой» на шагах до текущего (видимый порядок) — для @ в Q5 и т.п. */
+function resolveOtherMentionTextFromVisiblePrior(
+  visibleQuestions: Question[],
+  forQuestionId: string | undefined,
+  answersMap: Answers
+): string | null {
+  if (!forQuestionId) return null
+  const idx = visibleQuestions.findIndex((q) => q.id === forQuestionId)
+  const endExclusive = idx < 0 ? visibleQuestions.length : idx
+  let last: string | null = null
+  for (let i = 0; i < endExclusive; i++) {
+    const q = visibleQuestions[i]!
+    if (!isOtherAnswerSelected(q, answersMap)) continue
+    const t = answersMap[q.otherInputGroupId!]
+    const s = t != null && String(t).trim() !== "" ? String(t).trim() : ""
+    if (s) last = s
+  }
+  return last
+}
+
+function getOtherMentionTextForAtReplace(
+  questions: Question[],
+  visibleQuestions: Question[],
+  forQuestionId: string | undefined,
+  answersMap: Answers
+): string | null {
+  const fromPrior = resolveOtherMentionTextFromVisiblePrior(
+    visibleQuestions,
+    forQuestionId,
+    answersMap
+  )
+  if (fromPrior) return fromPrior
+
+  const q2Market = resolveMarketplaceQ2(questions)
+  const q3Idx = resolveFrequencyQ3Index(questions, q2Market)
+  const q3Freq = q3Idx >= 0 ? questions[q3Idx] : undefined
+  if (q2Market?.otherInputGroupId) {
+    const t = answersMap[q2Market.otherInputGroupId]
+    if (t && String(t).trim()) return String(t).trim()
+  }
+  if (q3Freq?.otherInputGroupId) {
+    const t = answersMap[q3Freq.otherInputGroupId]
+    if (t && String(t).trim()) return String(t).trim()
+  }
+  return null
+}
+
+function applyAtMentionPlain(text: string, mention: string | null): string {
+  if (!mention || !text.includes("@")) return text
+  return text.replace(/@[^@]*/g, mention)
 }
 
 /** Перемешивание вариантов Q2; последний в списке (обычно «Другой») всегда в конце */
@@ -717,22 +857,20 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     }
   }, [questions, answers])
 
-  // ✅ ФИХ 4: Замена @упоминаний на реальные значения в заголовках
-  const replaceSchemaPlaceholders = (schema: any, answersMap: Answers): any => {
+  // ✅ ФИХ 4: Замена @упоминаний — любой «другой» с текстом на предыдущих видимых шагах (не только Q2/Q3 по заголовку)
+  const replaceSchemaPlaceholders = (
+    schema: any,
+    answersMap: Answers,
+    forQuestionId?: string
+  ): any => {
     if (!schema || !Array.isArray(schema)) return schema
 
-    const q2Market = resolveMarketplaceQ2(questions)
-    const q3Idx = resolveFrequencyQ3Index(questions, q2Market)
-    const q3Freq = q3Idx >= 0 ? questions[q3Idx] : undefined
-    let otherMentionText: string | null = null
-    if (q2Market?.otherInputGroupId) {
-      const t = answersMap[q2Market.otherInputGroupId]
-      if (t && String(t).trim()) otherMentionText = String(t).trim()
-    }
-    if (!otherMentionText && q3Freq?.otherInputGroupId) {
-      const t = answersMap[q3Freq.otherInputGroupId]
-      if (t && String(t).trim()) otherMentionText = String(t).trim()
-    }
+    const otherMentionText = getOtherMentionTextForAtReplace(
+      questions,
+      visibleQuestions,
+      forQuestionId,
+      answersMap
+    )
 
     return schema.map((item: any) => {
       if (typeof item === "string") return item
@@ -768,8 +906,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }
 
   // ✅ ФИХ 5: Рендер с заменой @упоминаний
-  const renderSchemaWithReplacements = (schema: any): React.ReactNode => {
-    const replacedSchema = replaceSchemaPlaceholders(schema, answers)
+  const renderSchemaWithReplacements = (schema: any, forQuestionId?: string): React.ReactNode => {
+    const replacedSchema = replaceSchemaPlaceholders(schema, answers, forQuestionId)
     return renderSchema(replacedSchema)
   }
 
@@ -1031,6 +1169,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const currentQuestion = visibleQuestions[currentQuestionIndex]
   const isLastVisible = currentQuestionIndex === visibleQuestions.length - 1
 
+  const lastQuestionPriorSummaryText = useMemo(() => {
+    if (!isLastVisible || visibleQuestions.length < 2) return ""
+    return buildLastQuestionPriorSummaryText(
+      visibleQuestions,
+      answers,
+      ui.priorStagesIntro,
+      ui.yes,
+      ui.no
+    )
+  }, [isLastVisible, visibleQuestions, answers, ui])
+
   // «Далее» только после ответа на текущий вопрос (независимо от флага required в Tally)
   const canGoNext = (() => {
     if (!currentQuestion) return true
@@ -1151,11 +1300,27 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           </p>
         ) : currentQuestion ? (
           <div className="space-y-4">
-            {/* ✅ ФИХ 8: Заголовок с заменой @упоминаний */}
+            {/* ✅ ФИХ 8: Заголовок с заменой @упоминаний; на последнем шаге — сводка предыдущих ответов */}
             <h3 className="font-medium text-base leading-snug">
+              {lastQuestionPriorSummaryText ? (
+                <div className="mb-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-sm font-normal font-sans leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                  {lastQuestionPriorSummaryText}
+                </div>
+              ) : null}
               {currentQuestion.rawSchema
-                ? renderSchemaWithReplacements(currentQuestion.rawSchema)
-                : renderCurlyBraceInnerRed(currentQuestion.title, "qtitle-")}
+                ? renderSchemaWithReplacements(currentQuestion.rawSchema, currentQuestion.id)
+                : renderCurlyBraceInnerRed(
+                    applyAtMentionPlain(
+                      currentQuestion.title,
+                      getOtherMentionTextForAtReplace(
+                        questions,
+                        visibleQuestions,
+                        currentQuestion.id,
+                        answers
+                      )
+                    ),
+                    "qtitle-"
+                  )}
               {currentQuestion.required && <span className="text-red-500 ml-1">*</span>}
             </h3>
 

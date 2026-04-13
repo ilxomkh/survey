@@ -48,6 +48,8 @@ export type RecordingUiStrings = {
   finish: string
   finishConfirmQuestion: string
   otherOptionFallback: string
+  /** Сводка ответов на предыдущих шагах — показывается только на последнем видимом вопросе. */
+  priorStagesIntro: string
 }
 
 const RU_RECORDING: RecordingUiStrings = {
@@ -88,6 +90,7 @@ const RU_RECORDING: RecordingUiStrings = {
   finish: "Завершить",
   finishConfirmQuestion: "Точно хотите завершить опрос?",
   otherOptionFallback: "Другой",
+  priorStagesIntro: "На предыдущих шагах выбрано:",
 }
 
 const UZ_RECORDING: RecordingUiStrings = {
@@ -128,6 +131,7 @@ const UZ_RECORDING: RecordingUiStrings = {
   finish: "Tugatish",
   finishConfirmQuestion: "So'rovnomani tugatmoqchimisiz?",
   otherOptionFallback: "Boshqa",
+  priorStagesIntro: "Oldingi bosqichlarda tanlangan:",
 }
 
 export const RECORDING_UI: Record<SurveyUiLocale, RecordingUiStrings> = {
