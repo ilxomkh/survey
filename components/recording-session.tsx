@@ -301,7 +301,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
     return schema
       .map((item: any): string => {
-        if (typeof item === "string") return item
+        if (typeof item === "string") return isTallyStyleMarker(item) ? "" : item
         if (!Array.isArray(item)) return ""
 
         const first = item[0]
@@ -388,6 +388,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
     schema.forEach((item: any, i: number) => {
       if (typeof item === "string") {
+        if (isTallyStyleMarker(item)) return
         nodes.push(
           <span key={i}>{renderCurlyBraceInnerRed(item, `sch-s-${i}-`)}</span>
         )
