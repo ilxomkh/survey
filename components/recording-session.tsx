@@ -339,26 +339,48 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     // Tally хранит открывающую { как чистый вложенный массив-маркер (напр. [["tagmention"]]) —
     // extractTextFromSchema его фильтрует, и { теряется. Закрывающая } при этом лежит в
     // отдельном текстовом узле и проходит нормально.
-    // Второй проход: заменяем такие «пустые» nested-массивы на { и пробуем prescan ещё раз.
+    // Второй проход: находим позицию «чистого маркера» в fullMerged и вставляем туда {.
+    // Важно: используем fullMerged как основу (а не пересобранный текст), чтобы имена Tally-
+    // маркеров (tagfont-weight и т.п.) не просочились в итоговую строку.
     if (!fullMerged.includes("{") && fullMerged.includes("}")) {
-      const patchedMerged = normalizeCurlyBraceChars(
-        schema
-          .map((item: any): string => {
-            if (typeof item === "string") return item
-            if (!Array.isArray(item)) return ""
-            const f = item[0]
-            if (typeof f === "string") return isTallyStyleMarker(f) ? "" : f
-            if (Array.isArray(f)) {
-              const plain = extractPlainTextFromSchemaGroup(f)
-              // Чистый маркер без текста → неявная { (Tally mention/variable start)
-              return plain.trim().length === 0 ? "{" : plain
+      let charOffset = 0
+      let insertAt = -1
+      for (const item of schema) {
+        // Воспроизводим логику extractTextFromSchema — ровно столько символов добавляет каждый item
+        if (typeof item === "string") {
+          charOffset += item.length
+        } else if (Array.isArray(item)) {
+          const f = item[0]
+          if (typeof f === "string") {
+            if (!isTallyStyleMarker(f)) charOffset += f.length
+            // Tally-маркер → 0 символов
+          } else if (Array.isArray(f)) {
+            // Повторяем инлайн-извлечение из extractTextFromSchema (без рекурсии extractPlainTextFromSchemaGroup,
+            // чтобы точно совпадать с длиной fullMerged и не захватить лишний текст)
+            const inlineText = f
+              .map((fragment: any): string => {
+                if (typeof fragment === "string") return isTallyStyleMarker(fragment) ? "" : fragment
+                if (Array.isArray(fragment) && typeof fragment[0] === "string")
+                  return isTallyStyleMarker(fragment[0]) ? "" : fragment[0]
+                return ""
+              })
+              .join("")
+            if (inlineText.trim().length === 0) {
+              // Чистый маркер-массив без текста → неявная { (позиция вставки)
+              if (insertAt < 0) insertAt = charOffset
+            } else {
+              charOffset += inlineText.length
             }
-            return ""
-          })
-          .join("")
-      )
-      if (patchedMerged.includes("{") && /\{[^}]*\}/.test(patchedMerged)) {
-        return renderCurlyBraceInnerRed(patchedMerged, "sch-prescan-")
+          }
+        }
+      }
+      if (insertAt >= 0) {
+        const patchedMerged = normalizeCurlyBraceChars(
+          fullMerged.slice(0, insertAt) + "{" + fullMerged.slice(insertAt)
+        )
+        if (/\{[^}]*\}/.test(patchedMerged)) {
+          return renderCurlyBraceInnerRed(patchedMerged, "sch-prescan-")
+        }
       }
     }
 
