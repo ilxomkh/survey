@@ -8,6 +8,7 @@ import { AlertCircle, Play, LogOut, Loader2, ClipboardList } from "lucide-react"
 import Image from "next/image"
 import { PreparationModal } from "./preparation-modal"
 import { apiClient } from "@/lib/api-client"
+import { getSurveyUiLocale, AGENT_SURVEY_CARD_UI } from "@/lib/survey-ui-strings"
 
 interface Survey {
   id: number
@@ -105,7 +106,9 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
           </Card>
         ) : (
           <div className="space-y-3">
-            {surveys.map((survey) => (
+            {surveys.map((survey) => {
+              const cardUi = AGENT_SURVEY_CARD_UI[getSurveyUiLocale(survey)]
+              return (
               <Card
                 key={survey.id}
                 className={`border transition-all duration-200 ${survey.is_active
@@ -128,7 +131,7 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
                     </div>
                     {!survey.is_active && (
                       <span className="shrink-0 text-xs bg-muted text-muted-foreground px-2 py-1 rounded-full">
-                        Неактивно
+                        {cardUi.inactive}
                       </span>
                     )}
                   </div>
@@ -144,12 +147,13 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
                       }}
                     >
                       <Play className="h-4 w-4" />
-                      Начать опрос
+                      {cardUi.startSurvey}
                     </Button>
                   </CardContent>
                 )}
               </Card>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

@@ -15,11 +15,13 @@ import {
 import { AlertCircle, Square, Loader2, MapPin, CheckCircle2 } from "lucide-react"
 import { apiClient } from "@/lib/api-client"
 import { buildLogicEngine, TallyLogicEngine, LogicResult, Answers } from "@/lib/tally-logic-engine"
+import { getSurveyUiLocale, RECORDING_UI } from "@/lib/survey-ui-strings"
 
 interface Survey {
   id: number
   title: string
   description?: string
+  language?: string
 }
 
 interface QuestionOption {
@@ -197,12 +199,15 @@ function shuffleOptionsWithLocks(options: QuestionOption[], lockUuids: Set<strin
 }
 
 export function RecordingSession({ sessionId, survey, onComplete }: RecordingSessionProps) {
+  const locale = getSurveyUiLocale(survey)
+  const ui = RECORDING_UI[locale]
+
   const [isRecording, setIsRecording] = useState(false)
   const [duration, setDuration] = useState(0)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
-  const [geoStatus, setGeoStatus] = useState("Получение локации...")
-  const [micStatus, setMicStatus] = useState("Запрос микрофона...")
+  const [geoStatus, setGeoStatus] = useState(ui.geoLoading)
+  const [micStatus, setMicStatus] = useState(ui.micLoading)
   const [questions, setQuestions] = useState<Question[]>([])
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [answers, setAnswers] = useState<Answers>({})
@@ -249,7 +254,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             ? String(answers[q2.otherInputGroupId] ?? "").trim()
             : ""
         const otherLabel =
-          q2.options?.find((o) => o.uuid === uuid)?.text?.trim() || "Другой"
+          q2.options?.find((o) => o.uuid === uuid)?.text?.trim() || ui.otherOptionFallback
         newOptions.push({ uuid, text: custom || otherLabel })
       } else {
         const opt = q2.options?.find((o) => o.uuid === uuid)
@@ -269,7 +274,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         }
         : q
     )
-  }, [questions, answers])
+  }, [questions, answers, locale])
 
   // ─── Q2 (маркетплейсы): случайный порядок; учитываем Tally lockInPlace или последний вариант ─
   const marketplaceQ2OptionOrder = useMemo(() => {
@@ -763,8 +768,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         if (token) apiClient.setToken(token)
 
         if (!navigator.geolocation) {
-          setGeoStatus("✗ Геолокация не поддерживается")
-          setError("Геолокация не поддерживается вашим браузером")
+          setGeoStatus(ui.geoUnsupportedShort)
+          setError(ui.geoUnsupportedLong)
           setLoading(false)
           return
         }
@@ -773,9 +778,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           navigator.geolocation.getCurrentPosition(
             () => resolve(),
             (err) => {
-              alert("Геолокация запрещена. Разрешите доступ в настройках телефона")
-              setGeoStatus("✗ Геолокация запрещена")
-              setError("Геолокация запрещена. Разрешите доступ в настройках телефона")
+              alert(ui.geoDeniedAlert)
+              setGeoStatus(ui.geoDeniedShort)
+              setError(ui.geoDeniedLong)
               reject(err)
             },
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -790,7 +795,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           watchId = navigator.geolocation.watchPosition(
             async (position) => {
               lastPositionRef.current = position.coords
-              setGeoStatus(`✓ Локация получена (${position.coords.accuracy.toFixed(0)}м)`)
+              setGeoStatus(ui.geoOk(position.coords.accuracy.toFixed(0)))
               try {
                 await apiClient.updateLocation(
                   sessionId,
@@ -809,10 +814,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 return
               }
               switch (err.code) {
-                case err.PERMISSION_DENIED: setGeoStatus("✗ Доступ запрещен"); break
-                case err.POSITION_UNAVAILABLE: setGeoStatus("✗ GPS недоступен"); break
-                case err.TIMEOUT: setGeoStatus("✗ Таймаут GPS"); break
-                default: setGeoStatus(`✗ Ошибка: ${err.message}`)
+                case err.PERMISSION_DENIED: setGeoStatus(ui.geoPermissionDenied); break
+                case err.POSITION_UNAVAILABLE: setGeoStatus(ui.geoPositionUnavailable); break
+                case err.TIMEOUT: setGeoStatus(ui.geoTimeout); break
+                default: setGeoStatus(ui.geoError(err.message))
               }
             },
             { enableHighAccuracy: highAccuracy, timeout: 10000, maximumAge: 5000 }
@@ -824,7 +829,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
         streamRef.current = stream
-        setMicStatus("✓ Микрофон подключен")
+        setMicStatus(ui.micOk)
 
         const mediaRecorder = new MediaRecorder(stream)
         mediaRecorderRef.current = mediaRecorder
@@ -844,7 +849,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         setLoading(false)
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Ошибка инициализации")
+        setError(err instanceof Error ? err.message : ui.initError)
         setLoading(false)
       }
     }
@@ -859,7 +864,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       }
       streamRef.current?.getTracks().forEach((track) => track.stop())
     }
-  }, [sessionId])
+  }, [sessionId, locale])
 
   useEffect(() => {
     if (!loading && mediaRecorderRef.current && !isRecording) startRecording()
@@ -898,9 +903,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       if (lastPositionRef.current) {
         position = lastPositionRef.current
       } else {
-        if (!navigator.geolocation) throw new Error("Геолокация не поддерживается")
+        if (!navigator.geolocation) throw new Error(ui.geoNotSupportedThrow)
         position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
-          const timeoutId = setTimeout(() => reject(new Error("Таймаут получения геолокации")), 15000)
+          const timeoutId = setTimeout(() => reject(new Error(ui.geoTimeoutThrow)), 15000)
           navigator.geolocation.getCurrentPosition(
             (pos) => { clearTimeout(timeoutId); resolve(pos.coords) },
             (err) => { clearTimeout(timeoutId); reject(err) },
@@ -945,7 +950,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       await apiClient.completeSession(sessionId, position.latitude, position.longitude, position.accuracy, surveyAnswersList)
       onComplete()
     } catch (err: any) {
-      setError(err?.message || "Ошибка завершения сессии")
+      setError(err?.message || ui.sessionFinishError)
       setLoading(false)
     }
   }
@@ -1074,7 +1079,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         <Card className="max-w-md w-full">
           <CardContent className="pt-6 sm:pt-8 text-center space-y-3 sm:space-y-4 px-4 sm:px-6">
             <Loader2 className="h-6 w-6 sm:h-8 sm:w-8 animate-spin text-primary mx-auto" />
-            <p className="font-semibold text-sm sm:text-base">Инициализация сессии...</p>
+            <p className="font-semibold text-sm sm:text-base">{ui.initSessionTitle}</p>
             <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm text-muted-foreground">
               <p>{geoStatus}</p>
               <p>{micStatus}</p>
@@ -1101,7 +1106,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           <h2 className="font-semibold text-base sm:text-lg break-words">{survey.title}</h2>
           {visibleQuestions.length > 0 && (
             <p className="text-xs text-muted-foreground mt-1">
-              Вопрос {currentQuestionIndex + 1} из {visibleQuestions.length}
+              {ui.questionProgress(currentQuestionIndex + 1, visibleQuestions.length)}
             </p>
           )}
         </div>
@@ -1116,11 +1121,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         {loadingQuestions ? (
           <div className="flex items-center justify-center py-10">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <span className="ml-2 text-sm text-muted-foreground">Загрузка вопросов...</span>
+            <span className="ml-2 text-sm text-muted-foreground">{ui.loadingQuestions}</span>
           </div>
         ) : visibleQuestions.length === 0 ? (
           <p className="text-sm text-muted-foreground py-10 text-center">
-            Вопросы не найдены. Продолжайте запись.
+            {ui.noQuestions}
           </p>
         ) : currentQuestion ? (
           <div className="space-y-4">
@@ -1172,7 +1177,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                                 [currentQuestion.otherInputGroupId!]: e.target.value,
                               }))
                             }
-                            placeholder="Напишите ответ респондента"
+                            placeholder={ui.placeholderOther}
                             className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                           />
                         )}
@@ -1207,7 +1212,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                         {renderCurlyBraceInnerRed(selOption.text, "dd-trg-")}
                       </span>
                     ) : (
-                      <SelectValue placeholder="— Выберите вариант —" />
+                      <SelectValue placeholder={ui.selectPlaceholder} />
                     )
                   })()}
                 </SelectTrigger>
@@ -1268,7 +1273,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                               [currentQuestion.otherInputGroupId!]: e.target.value,
                             }))
                           }
-                          placeholder="Напишите ответ респондента"
+                          placeholder={ui.placeholderOther}
                           className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                         />
                       )}
@@ -1303,8 +1308,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                   ))}
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Точно нет</span>
-                  <span>Точно да</span>
+                  <span>{ui.scaleMinLabel}</span>
+                  <span>{ui.scaleMaxLabel}</span>
                 </div>
               </div>
             )}
@@ -1321,7 +1326,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 }
                 onFocus={() => setKeyboardOpen(true)}
                 onBlur={() => setTimeout(() => setKeyboardOpen(false), 150)}
-                placeholder="Введите число..."
+                placeholder={ui.placeholderNumber}
                 className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
             )}
@@ -1345,7 +1350,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                       setShowFinishConfirm(true)
                   }, 150)
                 }}
-                placeholder="Введите ваш ответ..."
+                placeholder={ui.placeholderText}
                 rows={4}
                 className="w-full p-3 text-sm border-2 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
               />
@@ -1358,14 +1363,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                   onClick={() => handleAnswer(currentQuestion.id, "yes")}
                   className="flex-1 h-11"
                 >
-                  Да
+                  {ui.yes}
                 </Button>
                 <Button
                   variant={answers[currentQuestion.id] === "no" ? "default" : "outline"}
                   onClick={() => handleAnswer(currentQuestion.id, "no")}
                   className="flex-1 h-11"
                 >
-                  Нет
+                  {ui.no}
                 </Button>
               </div>
             )}
@@ -1378,7 +1383,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                   disabled={currentQuestionIndex === 0}
                   className="flex-1 h-10 text-sm"
                 >
-                  Назад
+                  {ui.back}
                 </Button>
                 {!isLastVisible && (
                   <Button
@@ -1386,7 +1391,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     disabled={!canGoNext}
                     className="flex-1 h-10 text-sm"
                   >
-                    Далее
+                    {ui.next}
                   </Button>
                 )}
               </div>
@@ -1417,7 +1422,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               onClick={() => setShowFinishConfirm(false)}
               className="flex-1 h-11 text-sm"
             >
-              Нет, продолжить
+              {ui.finishConfirmNo}
             </Button>
             <Button
               onClick={finishRecording}
@@ -1427,7 +1432,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                "Да, завершить"
+                ui.finishConfirmYes
               )}
             </Button>
           </div>
@@ -1440,12 +1445,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             {loading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Завершение...
+                {ui.finishing}
               </>
             ) : (
               <>
                 <Square className="h-4 w-4" />
-                Завершить
+                {ui.finish}
               </>
             )}
           </Button>
@@ -1453,7 +1458,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         {showFinishConfirm && (
           <p className="text-xs text-center text-muted-foreground">
-            Точно хотите завершить опрос?
+            {ui.finishConfirmQuestion}
           </p>
         )}
       </div>
