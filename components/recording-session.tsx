@@ -347,8 +347,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       let insertAt = -1
       for (const item of schema) {
         // Воспроизводим логику extractTextFromSchema — ровно столько символов добавляет каждый item
+        // (включая фильтрацию top-level Tally-маркеров, добавленную в extractTextFromSchema)
         if (typeof item === "string") {
-          charOffset += item.length
+          if (!isTallyStyleMarker(item)) charOffset += item.length
         } else if (Array.isArray(item)) {
           const f = item[0]
           if (typeof f === "string") {
