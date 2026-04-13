@@ -83,9 +83,15 @@ function normalizeCurlyBraceChars(text: string): string {
   return text.replace(/\uFF5B/g, "{").replace(/\uFF5D/g, "}")
 }
 
+/** Tally иногда склеивает закрывающую `}` со стилевым токеном (`}tagfont-weight`) в одну строку. */
+function sanitizeTallyTextLeak(text: string): string {
+  if (!text) return text
+  return text.replace(/\}\s*tag[a-z][a-z0-9-]*/gi, "}").trimEnd()
+}
+
 /** Текст внутри `{…}` — явный красный (виден поверх цвета Tally); скобки — цвет текста вопроса */
 function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
-  const normalized = normalizeCurlyBraceChars(text)
+  const normalized = sanitizeTallyTextLeak(normalizeCurlyBraceChars(text))
   const hasCurly = normalized.includes("{") && normalized.includes("}")
   if (!hasCurly) return text
   const parts: ReactNode[] = []
@@ -227,6 +233,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const locationIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const lastPositionRef = useRef<GeolocationCoordinates | null>(null)
+  const answersRef = useRef<Answers>({})
+  const visibleQuestionsRef = useRef<Question[]>([])
 
   // ─── Answers o'zgarganda logic qayta hisoblash ──────────────
   useEffect(() => {
@@ -297,6 +305,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const visibleQuestions = questionsResolved.filter(
     (q) => !logicResult.hiddenGroupUuids.has(q.id)
   )
+  answersRef.current = answers
+  visibleQuestionsRef.current = visibleQuestions
 
   // ─── Парсинг блоков Tally ───────────────────────────────────
   const extractTextFromSchema = (schema: any): string => {
@@ -336,7 +346,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const renderSchema = (schema: any): React.ReactNode => {
     if (!schema || !Array.isArray(schema)) return null
 
-    const fullMerged = normalizeCurlyBraceChars(extractTextFromSchema(schema))
+    const fullMerged = sanitizeTallyTextLeak(
+      normalizeCurlyBraceChars(extractTextFromSchema(schema))
+    )
     if (fullMerged.includes("{") && fullMerged.includes("}") && /\{[^}]*\}/.test(fullMerged)) {
       return renderCurlyBraceInnerRed(fullMerged, "sch-prescan-")
     }
@@ -474,11 +486,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
     return titleBlocks
       .map((titleBlock: any, questionIndex: number) => {
-        const questionText =
+        const questionText = sanitizeTallyTextLeak(
           extractTextFromSchema(titleBlock.payload?.safeHTMLSchema) ||
-          titleBlock.payload?.title ||
-          titleBlock.text ||
-          ""
+            titleBlock.payload?.title ||
+            titleBlock.text ||
+            ""
+        )
         const rawSchema = titleBlock.payload?.safeHTMLSchema || null
 
         const titleBlockIndex = blocks.indexOf(titleBlock)
@@ -914,15 +927,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         })
       }
 
-      const surveyAnswersList = visibleQuestions
+      const snapshotAnswers = answersRef.current
+      const snapshotVisible = visibleQuestionsRef.current
+
+      const surveyAnswersList = snapshotVisible
         .filter((q) => {
-          const val = answers[q.id]
+          const val = snapshotAnswers[q.id]
           if (val === undefined || val === null || val === "") return false
           if (Array.isArray(val) && val.length === 0) return false
           return true
         })
         .map((q) => {
-          let value = answers[q.id]
+          let value = snapshotAnswers[q.id]
 
           if (q.type === "multiple_choice" && q.options) {
             const found = q.options.find((o) => o.uuid === value)
@@ -982,11 +998,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       }
     }
 
+    const answeredForFinish =
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      !(typeof value === "number" && Number.isNaN(value))
+
     if (
       isLastVisible &&
       currentQuestion?.id === questionId &&
-      !["text", "number"].includes(currentQuestion?.type) &&
-      value
+      !["text", "number"].includes(currentQuestion?.type ?? "") &&
+      answeredForFinish
     ) {
       setShowFinishConfirm(true)
     }
@@ -1333,7 +1355,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
             {currentQuestion.type === "text" && (
               <textarea
-                value={answers[currentQuestion.id] || ""}
+                value={answers[currentQuestion.id] ?? ""}
                 onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
                 onFocus={(e) => {
                   setKeyboardOpen(true)
@@ -1344,10 +1366,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                   )
                 }}
                 onBlur={() => {
+                  const qid = currentQuestion.id
                   setTimeout(() => {
                     setKeyboardOpen(false)
-                    if (isLastVisible && answers[currentQuestion.id])
+                    const t = answersRef.current[qid]
+                    if (isLastVisible && typeof t === "string" && t.trim().length > 0) {
                       setShowFinishConfirm(true)
+                    }
                   }, 150)
                 }}
                 placeholder={ui.placeholderText}
