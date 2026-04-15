@@ -18,6 +18,8 @@ interface Answer {
   questionText: string
   answerText: string
   type: string
+  /** Если бэкенд отдаёт значение отдельно (числа, массивы), показываем его в том числе для 0. */
+  value?: unknown
 }
 
 interface Session {
@@ -74,6 +76,15 @@ function formatDuration(sec: number | null) {
   const m = Math.floor(sec / 60)
   const s = sec % 60
   return `${m}м ${s}с`
+}
+
+/** Показ ответа: учитываем `value` с бэка; число 0 не считаем пустым (в отличие от `answerText || "—"`). */
+function formatSessionAnswerText(ans: Answer): string {
+  const raw = ans.value !== undefined && ans.value !== null ? ans.value : ans.answerText
+  if (raw === undefined || raw === null) return "—"
+  if (typeof raw === "string" && raw.trim() === "") return "—"
+  if (Array.isArray(raw)) return raw.length > 0 ? raw.map(String).join(", ") : "—"
+  return String(raw)
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -262,7 +273,7 @@ function SessionsTab() {
                           {session.answers.map((ans, i) => (
                             <div key={ans.questionId || i} className="bg-muted/50 rounded p-2">
                               <p className="text-xs text-muted-foreground">{ans.questionText || ans.questionId}</p>
-                              <p className="text-sm font-medium mt-0.5">{ans.answerText || "—"}</p>
+                              <p className="text-sm font-medium mt-0.5">{formatSessionAnswerText(ans)}</p>
                             </div>
                           ))}
                         </div>

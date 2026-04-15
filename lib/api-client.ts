@@ -290,12 +290,17 @@ class ApiClient {
     latitude: number,
     longitude: number,
     accuracy: number,
-    surveyAnswers?: Array<{ key: string; question: string; type: string; value: any }>
+    surveyAnswers?: Array<{ key: string; question: string; type: string; value: any }>,
+    isComplete?: boolean
   ) {
     const body: any = { latitude, longitude, accuracy }
     if (surveyAnswers && surveyAnswers.length > 0) {
       // Используем survey_answers — именно это поле ждёт бэкенд (schemas.py: SessionComplete)
       body.survey_answers = surveyAnswers
+    }
+    // is_complete: true — все вопросы отвечены; false — незавершённый опрос
+    if (isComplete !== undefined) {
+      body.is_complete = isComplete
     }
     return this.request(`/api/sessions/${sessionId}/complete`, {
       method: "POST",

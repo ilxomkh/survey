@@ -1,7 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -9,10 +15,13 @@ import { AlertCircle, Loader2, MapPin, Mic, Shield } from "lucide-react"
 import { RecordingSession } from "./recording-session"
 import { apiClient } from "@/lib/api-client"
 import { storage } from "@/lib/storage"
+import { getSurveyUiLocale, PREPARATION_UI } from "@/lib/survey-ui-strings"
 
 interface Survey {
   id: number
   title: string
+  description?: string
+  language?: string
 }
 
 interface PreparationModalProps {
@@ -21,6 +30,9 @@ interface PreparationModalProps {
 }
 
 export function PreparationModal({ survey, onClose }: PreparationModalProps) {
+  const locale = getSurveyUiLocale(survey)
+  const p = PREPARATION_UI[locale]
+
   const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -33,7 +45,7 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
 
     try {
       if (!navigator.geolocation) {
-        throw new Error("Геолокация не поддерживается вашим браузером")
+        throw new Error(p.geoUnsupported)
       }
 
       const isSecure = window.location.protocol === "https:" || window.location.hostname === "localhost"
@@ -50,9 +62,9 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
             resolve(success.coords)
           },
           (err) => {
-            alert("Геолокация запрещена. Разрешите доступ в настройках телефона")
+            alert(p.geoDeniedAlert)
             console.error("[PreparationModal] ❌ Ошибка геолокации:", err)
-            reject(new Error("Геолокация запрещена. Разрешите доступ в настройках телефона"))
+            reject(new Error(p.geoDeniedError))
           },
           {
             enableHighAccuracy: true,
@@ -81,7 +93,7 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
       console.log("[PreparationModal] session_id сохранен в localStorage:", sessionId)
       setShowRecording(true)
     } catch (err: any) {
-      setError(err?.message || "Ошибка запуска сессии")
+      setError(err?.message || p.sessionStartError)
     } finally {
       setLoading(false)
     }
@@ -93,29 +105,36 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-sm border-primary/20">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-semibold">{survey.title}</DialogTitle>
+      <DialogContent className="max-h-[min(90dvh,720px)] w-full max-w-sm sm:max-w-md border-primary/20 overflow-y-auto overflow-x-hidden">
+        <DialogHeader className="space-y-2 text-left">
+          <DialogTitle className="text-lg font-semibold leading-snug break-words pr-6">
+            {survey.title}
+          </DialogTitle>
+          {survey.description?.trim() && (
+            <DialogDescription className="break-words whitespace-pre-wrap leading-relaxed text-left">
+              {survey.description}
+            </DialogDescription>
+          )}
         </DialogHeader>
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">Перед началом убедитесь, что всё готово:</p>
+          <p className="text-sm text-muted-foreground">{p.checklistIntro}</p>
 
           <div className="space-y-2">
             <div className="flex items-center gap-3 rounded-xl bg-primary/8 border border-primary/15 px-4 py-3">
               <MapPin className="h-4 w-4 text-primary shrink-0" />
-              <span className="text-sm">Геолокация будет запрошена при старте</span>
+              <span className="text-sm">{p.geoBullet}</span>
             </div>
 
             <div className="flex items-center gap-3 rounded-xl bg-primary/8 border border-primary/15 px-4 py-3">
               <Mic className="h-4 w-4 text-primary shrink-0" />
-              <span className="text-sm">Микрофон будет запрошен при старте</span>
+              <span className="text-sm">{p.micBullet}</span>
             </div>
 
             <div className="flex items-center gap-3 rounded-xl bg-[#7C65FF]/5 border border-[#7C65FF]/10 px-4 py-3">
               <Shield className="h-4 w-4 text-primary/70 shrink-0" />
               <div className="text-sm text-muted-foreground space-y-0.5">
-                <p>✓ Опрос лицом к лицу</p>
-                <p>✓ Аудиозапись автоматически</p>
+                <p>{p.modeFaceToFace}</p>
+                <p>{p.modeAudio}</p>
               </div>
             </div>
           </div>
@@ -135,13 +154,13 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
               className="mt-0.5 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
             />
             <label htmlFor="consent" className="text-sm text-muted-foreground cursor-pointer leading-relaxed">
-              Я подтверждаю согласие респондента на проведение опроса и запись аудио
+              {p.consentLabel}
             </label>
           </div>
 
           <div className="flex gap-2 pt-1">
             <Button variant="outline" onClick={onClose} className="flex-1 bg-transparent">
-              Отмена
+              {p.cancel}
             </Button>
             <Button
               onClick={handleStart}
@@ -151,10 +170,10 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Загрузка...
+                  {p.loading}
                 </>
               ) : (
-                "Начать"
+                p.start
               )}
             </Button>
           </div>

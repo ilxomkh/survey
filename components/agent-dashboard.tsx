@@ -8,6 +8,7 @@ import { AlertCircle, Play, LogOut, Loader2, ClipboardList } from "lucide-react"
 import Image from "next/image"
 import { PreparationModal } from "./preparation-modal"
 import { apiClient } from "@/lib/api-client"
+import { getSurveyUiLocale, AGENT_SURVEY_CARD_UI } from "@/lib/survey-ui-strings"
 
 interface Survey {
   id: number
@@ -105,27 +106,32 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
           </Card>
         ) : (
           <div className="space-y-3">
-            {surveys.map((survey) => (
+            {surveys.map((survey) => {
+              const cardUi = AGENT_SURVEY_CARD_UI[getSurveyUiLocale(survey)]
+              return (
               <Card
                 key={survey.id}
-                className={`border transition-all duration-200 ${
-                  survey.is_active
+                className={`border transition-all duration-200 ${survey.is_active
                     ? "border-primary/20 hover:border-primary/50 hover:shadow-md hover:shadow-primary/10 cursor-pointer"
                     : "border-border opacity-60"
-                }`}
+                  }`}
                 onClick={() => survey.is_active && setSelectedSurvey(survey)}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <CardTitle className="text-base font-semibold leading-snug">{survey.title}</CardTitle>
-                      {survey.description && (
-                        <CardDescription className="mt-1 text-sm line-clamp-2">{survey.description}</CardDescription>
+                      <CardTitle className="text-base font-semibold leading-snug break-words">
+                        {survey.title}
+                      </CardTitle>
+                      {survey.description?.trim() && (
+                        <CardDescription className="mt-1.5 text-sm break-words whitespace-pre-wrap leading-relaxed text-muted-foreground">
+                          {survey.description}
+                        </CardDescription>
                       )}
                     </div>
                     {!survey.is_active && (
                       <span className="shrink-0 text-xs bg-muted text-muted-foreground px-2 py-1 rounded-full">
-                        Неактивно
+                        {cardUi.inactive}
                       </span>
                     )}
                   </div>
@@ -141,12 +147,13 @@ export function AgentDashboard({ onLogout }: AgentDashboardProps) {
                       }}
                     >
                       <Play className="h-4 w-4" />
-                      Начать опрос
+                      {cardUi.startSurvey}
                     </Button>
                   </CardContent>
                 )}
               </Card>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
