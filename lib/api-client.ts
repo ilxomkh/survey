@@ -374,7 +374,7 @@ class ApiClient {
   }
 
   async getSurveyQuestions(surveyId: number, sessionId?: string) {
-    let endpoint = `/webhooks/tally/surveys/${surveyId}/questions`
+    let endpoint = `/api/webhooks/tally/surveys/${surveyId}/questions`
     if (sessionId) {
       const params = new URLSearchParams({ session_id: sessionId })
       endpoint = `${endpoint}?${params.toString()}`
