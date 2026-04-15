@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,5 +32,5 @@ jobs:
           docker run -d \
             --name offline_survey_web \
             --restart unless-stopped \
-            -p 3000:3000 \
+            -p 8001:3000 \
             prosurvey2025/survey-frontend:latest
