@@ -22,7 +22,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: prosurvey2025/survey-frontend:latest
+          tags: ${{ secrets.DOCKER_USER }}/survey-frotend:latest
 
       - name: Deploy container
         run: |
