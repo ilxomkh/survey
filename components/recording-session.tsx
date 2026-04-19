@@ -1037,7 +1037,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           if (q.type === "multiple_choice" && q.options) {
             if (value === q.otherOptionUuid && q.otherInputGroupId) {
               const otherText = String(snapshotAnswers[q.otherInputGroupId] ?? "").trim()
-              value = otherText || q.options.find((o) => o.uuid === value)?.text ?? value
+              value = otherText || (q.options.find((o) => o.uuid === value)?.text ?? value)
             } else {
               const found = q.options.find((o) => o.uuid === value)
               value = found?.text ?? value
