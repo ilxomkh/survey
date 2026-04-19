@@ -1035,11 +1035,20 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           let value = snapshotAnswers[q.id]
 
           if (q.type === "multiple_choice" && q.options) {
-            const found = q.options.find((o) => o.uuid === value)
-            value = found?.text ?? value
+            if (value === q.otherOptionUuid && q.otherInputGroupId) {
+              const otherText = String(snapshotAnswers[q.otherInputGroupId] ?? "").trim()
+              value = otherText || q.options.find((o) => o.uuid === value)?.text ?? value
+            } else {
+              const found = q.options.find((o) => o.uuid === value)
+              value = found?.text ?? value
+            }
           }
           if (q.type === "checkbox" && q.options && Array.isArray(value)) {
             value = (value as string[]).map((uuid) => {
+              if (uuid === q.otherOptionUuid && q.otherInputGroupId) {
+                const otherText = String(snapshotAnswers[q.otherInputGroupId] ?? "").trim()
+                if (otherText) return otherText
+              }
               const found = q.options!.find((o) => o.uuid === uuid)
               return found?.text ?? uuid
             })
