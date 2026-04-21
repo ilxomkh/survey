@@ -1001,16 +1001,21 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
       if (lastPositionRef.current) {
         position = lastPositionRef.current
+      } else if (navigator.geolocation) {
+        try {
+          position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
+            const timeoutId = setTimeout(() => reject(new Error(ui.geoTimeoutThrow)), 15000)
+            navigator.geolocation.getCurrentPosition(
+              (pos) => { clearTimeout(timeoutId); resolve(pos.coords) },
+              (err) => { clearTimeout(timeoutId); reject(err) },
+              { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 }
+            )
+          })
+        } catch {
+          position = { latitude: 0, longitude: 0, accuracy: 0 } as GeolocationCoordinates
+        }
       } else {
-        if (!navigator.geolocation) throw new Error(ui.geoNotSupportedThrow)
-        position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
-          const timeoutId = setTimeout(() => reject(new Error(ui.geoTimeoutThrow)), 15000)
-          navigator.geolocation.getCurrentPosition(
-            (pos) => { clearTimeout(timeoutId); resolve(pos.coords) },
-            (err) => { clearTimeout(timeoutId); reject(err) },
-            { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 }
-          )
-        })
+        position = { latitude: 0, longitude: 0, accuracy: 0 } as GeolocationCoordinates
       }
 
       const snapshotAnswers = answersRef.current
