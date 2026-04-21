@@ -1021,8 +1021,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       const snapshotAnswers = answersRef.current
       const snapshotVisible = visibleQuestionsRef.current
 
-      // Завершён = все видимые вопросы имеют ответ
-      const isComplete = snapshotVisible.every((q) => {
+      // Завершён = все видимые вопросы имеют ответ (и вопросов больше 0)
+      const isComplete = snapshotVisible.length > 0 && snapshotVisible.every((q) => {
         const val = snapshotAnswers[q.id]
         if (val === undefined || val === null || val === "") return false
         if (Array.isArray(val) && val.length === 0) return false
