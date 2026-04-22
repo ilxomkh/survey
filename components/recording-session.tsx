@@ -291,6 +291,26 @@ function shuffleOptionsWithLocks(options: QuestionOption[], lockUuids: Set<strin
   return [...movable, ...locked]
 }
 
+// ─── Загрузка аудио с retry ──────────────────────────────────
+async function uploadAudioWithRetry(
+  sessionId: string,
+  blob: Blob,
+  retries = 3
+): Promise<void> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await apiClient.uploadAudio(sessionId, blob)
+      return
+    } catch (err) {
+      console.warn(`[Audio] Попытка ${i + 1}/${retries} не удалась:`, err)
+      if (i < retries - 1) {
+        await new Promise((r) => setTimeout(r, 2000 * (i + 1)))
+      }
+    }
+  }
+  console.error("[Audio] Все попытки исчерпаны, чанк потерян")
+}
+
 export function RecordingSession({ sessionId, survey, onComplete }: RecordingSessionProps) {
   const locale = getSurveyUiLocale(survey)
   const ui = RECORDING_UI[locale]
@@ -316,6 +336,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const uploadPromisesRef = useRef<Promise<any>[]>([])
+  // ✅ FIX: локальное хранение чанков для fallback при завершении
+  const audioChunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const locationIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -426,10 +448,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       .trim()
   }
 
-  // Рендер safeHTMLSchema; `{плейсхолдер}` — красный текст внутри скобок.
-  // Pre-scan: если {…} обнаружены где угодно в схеме (даже разбитые по разным фрагментам
-  // Tally через mention/color/background-color), склеиваем весь текст и рендерим целиком —
-  // это гарантирует красный цвет для ЛЮБОГО будущего опросника.
   const renderSchema = (schema: any, atMention?: string | null): React.ReactNode => {
     if (!schema || !Array.isArray(schema)) return null
 
@@ -449,28 +467,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       return renderCurlyBraceInnerRed(displayMerged, "sch-prescan-")
     }
 
-    // Tally хранит открывающую { как чистый вложенный массив-маркер (напр. [["tagmention"]]) —
-    // extractTextFromSchema его фильтрует, и { теряется. Закрывающая } при этом лежит в
-    // отдельном текстовом узле и проходит нормально.
-    // Второй проход: находим позицию «чистого маркера» в fullMerged и вставляем туда {.
-    // Важно: используем fullMerged как основу (а не пересобранный текст), чтобы имена Tally-
-    // маркеров (tagfont-weight и т.п.) не просочились в итоговую строку.
     if (!fullMerged.includes("{") && fullMerged.includes("}")) {
       let charOffset = 0
       let insertAt = -1
       for (const item of schema) {
-        // Воспроизводим логику extractTextFromSchema — ровно столько символов добавляет каждый item
-        // (включая фильтрацию top-level Tally-маркеров, добавленную в extractTextFromSchema)
         if (typeof item === "string") {
           if (!isTallyStyleMarker(item)) charOffset += item.length
         } else if (Array.isArray(item)) {
           const f = item[0]
           if (typeof f === "string") {
             if (!isTallyStyleMarker(f)) charOffset += f.length
-            // Tally-маркер → 0 символов
           } else if (Array.isArray(f)) {
-            // Повторяем инлайн-извлечение из extractTextFromSchema (без рекурсии extractPlainTextFromSchemaGroup,
-            // чтобы точно совпадать с длиной fullMerged и не захватить лишний текст)
             const inlineText = f
               .map((fragment: any): string => {
                 if (typeof fragment === "string") return isTallyStyleMarker(fragment) ? "" : fragment
@@ -480,7 +487,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               })
               .join("")
             if (inlineText.trim().length === 0) {
-              // Чистый маркер-массив без текста → неявная { (позиция вставки)
               if (insertAt < 0) insertAt = charOffset
             } else {
               charOffset += inlineText.length
@@ -518,7 +524,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       const first = item[0]
 
       if (typeof first === "string") {
-        // Пропускаем Tally-стилевые маркеры ["tagfont-weight", ...], ["tagcolor", ...] и т.п.
         if (isTallyStyleMarker(first)) return
         const styleArr = item.slice(1)
         const color = styleArr
@@ -845,7 +850,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     }
   }, [questions, answers])
 
-  // @ в safeHTMLSchema: подстановка на **склеенной** строке внутри renderSchema (глубокая правка массива ломала extractTextFromSchema → один «обрубок» текста на последнем шаге).
   const renderSchemaWithReplacements = (schema: any, forQuestionId?: string): React.ReactNode => {
     const cur = forQuestionId
       ? visibleQuestions.find((q) => q.id === forQuestionId)
@@ -921,12 +925,32 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         startWatching(true)
         locationIntervalRef.current = watchId as any
 
-        const stream = await Promise.race([
-          navigator.mediaDevices.getUserMedia({ audio: true }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(ui.micLoading.replace("...", "") + " timeout")), 12000)
-          ),
-        ])
+        // ✅ FIX: микрофон блокирует сессию так же как геолокация
+        let stream: MediaStream
+        try {
+          stream = await Promise.race([
+            navigator.mediaDevices.getUserMedia({ audio: true }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(ui.micLoading.replace("...", "") + " timeout")), 12000)
+            ),
+          ])
+        } catch (err: any) {
+          const isDenied =
+            err?.name === "NotAllowedError" ||
+            err?.name === "PermissionDeniedError"
+          const msg = isDenied
+            ? (locale === "uz"
+                ? "Mikrofonga ruxsat berilmadi. Iltimos, brauzer sozlamalarida ruxsat bering va qayta urinib ko'ring."
+                : "Доступ к микрофону запрещён. Разрешите доступ в настройках браузера и попробуйте снова.")
+            : (err?.message || ui.initError)
+
+          alert(msg)
+          setMicStatus(locale === "uz" ? "Mikrofon: ruxsat yo'q" : "Микрофон: нет доступа")
+          setError(msg)
+          setLoading(false)
+          return // ✅ блокируем сессию — не открываем опросник
+        }
+
         streamRef.current = stream
         setMicStatus(ui.micOk)
 
@@ -935,13 +959,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
-            const uploadPromise = (async () => {
-              try {
-                await apiClient.uploadAudio(sessionId, event.data)
-              } catch (err) {
-                console.error("[RecordingSession] Ошибка отправки аудио:", err)
-              }
-            })()
+            // ✅ FIX: сохраняем чанк локально
+            audioChunksRef.current.push(event.data)
+            // ✅ FIX: загружаем с retry вместо fire-and-forget
+            const uploadPromise = uploadAudioWithRetry(sessionId, event.data, 3)
             uploadPromisesRef.current.push(uploadPromise)
           }
         }
@@ -971,7 +992,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   const startRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "inactive") {
-      mediaRecorderRef.current.start(10000)
+      // ✅ FIX: 5000мс вместо 10000 — меньше потерь при обрыве сети
+      mediaRecorderRef.current.start(5000)
       setIsRecording(true)
       timerRef.current = setInterval(() => setDuration((prev) => prev + 1), 1000)
     }
@@ -992,8 +1014,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         setIsRecording(false)
       }
 
-      await Promise.allSettled(uploadPromisesRef.current)
+      // ✅ FIX: проверяем результаты — если были ошибки, отправляем весь аудио целиком
+      const results = await Promise.allSettled(uploadPromisesRef.current)
       uploadPromisesRef.current = []
+
+      const failedCount = results.filter((r) => r.status === "rejected").length
+      if (failedCount > 0 && audioChunksRef.current.length > 0) {
+        console.warn(`[Audio] ${failedCount} чанков не загрузились, отправляем весь аудио целиком`)
+        const fullBlob = new Blob(audioChunksRef.current, { type: "audio/webm" })
+        await uploadAudioWithRetry(sessionId, fullBlob, 5)
+      }
+      audioChunksRef.current = []
 
       streamRef.current?.getTracks().forEach((track) => track.stop())
 
@@ -1016,7 +1047,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       const snapshotAnswers = answersRef.current
       const snapshotVisible = visibleQuestionsRef.current
 
-      // Завершён = все видимые вопросы имеют ответ
       const isComplete = snapshotVisible.every((q) => {
         const val = snapshotAnswers[q.id]
         if (val === undefined || val === null || val === "") return false
@@ -1125,7 +1155,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const currentQuestion = visibleQuestions[currentQuestionIndex]
   const isLastVisible = currentQuestionIndex === visibleQuestions.length - 1
 
-  // «Далее» только после ответа на текущий вопрос (независимо от флага required в Tally)
   const canGoNext = (() => {
     if (!currentQuestion) return true
 
@@ -1172,7 +1201,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   })()
 
   const handleNext = () => {
-    // ✅ ФИХ 7: Блокировка если нет ответа
     if (!canGoNext) return
 
     if (logicResult.jumpToPageUuid) {
@@ -1245,7 +1273,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           </p>
         ) : currentQuestion ? (
           <div className="space-y-4">
-            {/* Заголовок: rawSchema — глубокая замена @; плоский title — applyAtMentionPlain + getAtMentionReplacement */}
             <h3 className="font-medium text-base leading-snug">
               {currentQuestion.rawSchema
                 ? renderSchemaWithReplacements(currentQuestion.rawSchema, currentQuestion.id)
