@@ -601,9 +601,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       .map((titleBlock: any, questionIndex: number) => {
         const questionText = sanitizeTallyTextLeak(
           extractTextFromSchema(titleBlock.payload?.safeHTMLSchema) ||
-            titleBlock.payload?.title ||
-            titleBlock.text ||
-            ""
+          titleBlock.payload?.title ||
+          titleBlock.text ||
+          ""
         )
         const rawSchema = titleBlock.payload?.safeHTMLSchema || null
 
@@ -1234,6 +1234,30 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     )
   }
 
+  if (error && !streamRef.current) {
+    return (
+      <div className="fixed inset-0 bg-background flex flex-col items-center justify-center z-50 p-6 text-center">
+        <AlertCircle className="h-16 w-16 text-destructive mb-4" />
+        <h2 className="font-bold text-xl mb-2">
+          {locale === "uz" ? "Ruxsat majburiy" : "Доступ обязателен"}
+        </h2>
+        <p className="text-muted-foreground text-sm mb-6">
+          {locale === "uz" ? (
+            <>So'rovnomani o'tkazish uchun <b>mikrofon</b> va <b>geolokatsiyaga</b> ruxsat berish majburiydir. Busiz so'rovnomani boshlash imkonsiz.</>
+          ) : (
+            <>Для проведения опроса необходимо обязательно разрешить доступ к <b>микрофону</b> и <b>геолокации</b>. Без этого начать опрос невозможно.</>
+          )}
+        </p>
+        <p className="text-xs text-destructive mb-6 font-mono bg-destructive/10 p-2 rounded w-full max-w-md break-words">
+          {error}
+        </p>
+        <Button onClick={() => window.location.reload()} className="w-full max-w-xs h-12">
+          {locale === "uz" ? "Yangilash va ruxsat berish" : "Обновить и разрешить доступ"}
+        </Button>
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
       <div
@@ -1277,17 +1301,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               {currentQuestion.rawSchema
                 ? renderSchemaWithReplacements(currentQuestion.rawSchema, currentQuestion.id)
                 : renderCurlyBraceInnerRed(
-                    applyAtMentionPlain(
-                      currentQuestion.title,
-                      getAtMentionReplacement(
-                        questions,
-                        visibleQuestions,
-                        answers,
-                        currentQuestion
-                      )
-                    ),
-                    "qtitle-"
-                  )}
+                  applyAtMentionPlain(
+                    currentQuestion.title,
+                    getAtMentionReplacement(
+                      questions,
+                      visibleQuestions,
+                      answers,
+                      currentQuestion
+                    )
+                  ),
+                  "qtitle-"
+                )}
               {currentQuestion.required && <span className="text-red-500 ml-1">*</span>}
             </h3>
 
@@ -1349,17 +1373,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     ? (answers[currentQuestion.id] as string)
                     : undefined
                 }
-                onValueChange={(v) => handleAnswer(currentQuestion.id, v)}
+                onValueChange={(v: string) => handleAnswer(currentQuestion.id, v)}
               >
                 <SelectTrigger className="w-full h-auto min-h-12 py-3 text-sm border-2 rounded-lg focus:ring-2 focus:ring-primary bg-background whitespace-normal [&_[data-slot=select-value]]:text-left [&_[data-slot=select-value]]:whitespace-normal">
                   {(() => {
                     const selUuid =
                       typeof answers[currentQuestion.id] === "string" &&
-                      answers[currentQuestion.id] !== ""
+                        answers[currentQuestion.id] !== ""
                         ? (answers[currentQuestion.id] as string)
                         : undefined
                     const selOption = selUuid
-                      ? currentQuestion.options!.find((o) => o.uuid === selUuid)
+                      ? currentQuestion.options!.find((o: QuestionOption) => o.uuid === selUuid)
                       : undefined
                     return selOption ? (
                       <span data-slot="select-value">
@@ -1371,7 +1395,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                   })()}
                 </SelectTrigger>
                 <SelectContent>
-                  {currentQuestion.options.map((option) => (
+                  {currentQuestion.options.map((option: QuestionOption) => (
                     <SelectItem key={option.uuid} value={option.uuid} className="py-2.5">
                       {renderCurlyBraceInnerRed(option.text, `dd-${option.uuid}-`)}
                     </SelectItem>
@@ -1384,17 +1408,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               <div className="space-y-2">
                 {(marketplaceQ2OptionOrder?.questionId === currentQuestion.id
                   ? marketplaceQ2OptionOrder.uuids
-                    .map((uuid) =>
-                      currentQuestion.options!.find((o) => o.uuid === uuid)
+                    .map((uuid: string) =>
+                      currentQuestion.options!.find((o: QuestionOption) => o.uuid === uuid)
                     )
                     .filter(
                       (o): o is QuestionOption =>
                         !!o && !logicResult.hiddenGroupUuids.has(o.uuid)
                     )
                   : currentQuestion.options.filter(
-                    (option) => !logicResult.hiddenGroupUuids.has(option.uuid)
+                    (option: QuestionOption) => !logicResult.hiddenGroupUuids.has(option.uuid)
                   )
-                ).map((option) => {
+                ).map((option: QuestionOption) => {
                   const selected: string[] = Array.isArray(answers[currentQuestion.id])
                     ? answers[currentQuestion.id]
                     : []
@@ -1421,8 +1445,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                         <input
                           type="text"
                           value={answers[currentQuestion.otherInputGroupId!] || ""}
-                          onChange={(e) =>
-                            setAnswers((prev) => ({
+                          onChange={(e: any) =>
+                            setAnswers((prev: Answers) => ({
                               ...prev,
                               [currentQuestion.otherInputGroupId!]: e.target.value,
                             }))
