@@ -68,7 +68,7 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
             console.warn("[PreparationModal] Первая попытка geo failed:", err)
 
             if (err.code === 1) {
-              reject(new Error(p.geoDeniedError))
+              reject(new Error(p.geoUnavailable || p.sessionStartError))
               return
             }
 
@@ -81,7 +81,7 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
                 console.error("[PreparationModal] ❌ Ошибка fallback геолокации:", fallbackErr)
 
                 if (fallbackErr.code === 1) {
-                  reject(new Error(p.geoDeniedError))
+                  reject(new Error(p.geoUnavailable || p.sessionStartError))
                 } else {
                   reject(new Error(p.geoUnavailable || p.sessionStartError))
                 }

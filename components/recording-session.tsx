@@ -872,22 +872,22 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           return
         }
 
-        await new Promise<void>((resolve, reject) => {
+        await new Promise<void>((resolve) => {
           navigator.geolocation.getCurrentPosition(
             () => resolve(),
             () => {
               navigator.geolocation.getCurrentPosition(
                 () => resolve(),
                 (err) => {
-                  console.warn("[RecordingSession] " + ui.geoDeniedAlert); setError(ui.geoDeniedAlert)
+                  console.warn("[RecordingSession] geolocation precheck failed:", err)
                   setGeoStatus(ui.geoDeniedShort)
                   setError(ui.geoDeniedLong)
-                  reject(err)
+                  resolve()
                 },
                 { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
               )
             },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
           )
         })
 
