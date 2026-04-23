@@ -61,14 +61,27 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
             console.log("[PreparationModal] ✅ Геолокация получена:", success)
             resolve(success.coords)
           },
-          (err) => {
-            alert(p.geoDeniedAlert)
-            console.error("[PreparationModal] ❌ Ошибка геолокации:", err)
-            reject(new Error(p.geoDeniedError))
+          () => {
+            navigator.geolocation.getCurrentPosition(
+              (success) => {
+                console.log("[PreparationModal] ✅ Геолокация получена (fallback):", success)
+                resolve(success.coords)
+              },
+              (err) => {
+                alert(p.geoDeniedAlert)
+                console.error("[PreparationModal] ❌ Ошибка геолокации:", err)
+                reject(new Error(p.geoDeniedError))
+              },
+              {
+                enableHighAccuracy: false,
+                timeout: 10000,
+                maximumAge: 60000,
+              }
+            )
           },
           {
             enableHighAccuracy: true,
-            timeout: 15000,
+            timeout: 10000,
             maximumAge: 0,
           }
         )
