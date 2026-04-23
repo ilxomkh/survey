@@ -875,13 +875,19 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         await new Promise<void>((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(
             () => resolve(),
-            (err) => {
-              alert(ui.geoDeniedAlert)
-              setGeoStatus(ui.geoDeniedShort)
-              setError(ui.geoDeniedLong)
-              reject(err)
+            () => {
+              navigator.geolocation.getCurrentPosition(
+                () => resolve(),
+                (err) => {
+                  alert(ui.geoDeniedAlert)
+                  setGeoStatus(ui.geoDeniedShort)
+                  setError(ui.geoDeniedLong)
+                  reject(err)
+                },
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+              )
             },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
           )
         })
 
