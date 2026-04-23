@@ -48,9 +48,12 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
         throw new Error(p.geoUnsupported)
       }
 
-      const isSecure = window.location.protocol === "https:" || window.location.hostname === "localhost"
+      const isSecure =
+        window.location.protocol === "https:" ||
+        window.location.hostname === "localhost"
+
       if (!isSecure) {
-        console.warn("[PreparationModal] ⚠️ Небезопасное соединение. Android может блокировать геолокацию.")
+        console.warn("[PreparationModal] Небезопасное соединение")
       }
 
       const position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
@@ -61,27 +64,38 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
             console.log("[PreparationModal] ✅ Геолокация получена:", success)
             resolve(success.coords)
           },
-          () => {
+          (err) => {
+            console.warn("[PreparationModal] Первая попытка geo failed:", err)
+
+            if (err.code === 1) {
+              reject(new Error(p.geoDeniedError))
+              return
+            }
+
             navigator.geolocation.getCurrentPosition(
               (success) => {
                 console.log("[PreparationModal] ✅ Геолокация получена (fallback):", success)
                 resolve(success.coords)
               },
-              (err) => {
-                alert(p.geoDeniedAlert)
-                console.error("[PreparationModal] ❌ Ошибка геолокации:", err)
-                reject(new Error(p.geoDeniedError))
+              (fallbackErr) => {
+                console.error("[PreparationModal] ❌ Ошибка fallback геолокации:", fallbackErr)
+
+                if (fallbackErr.code === 1) {
+                  reject(new Error(p.geoDeniedError))
+                } else {
+                  reject(new Error(p.geoUnavailable || p.sessionStartError))
+                }
               },
               {
                 enableHighAccuracy: false,
-                timeout: 10000,
-                maximumAge: 60000,
+                timeout: 15000,
+                maximumAge: 120000,
               }
             )
           },
           {
-            enableHighAccuracy: true,
-            timeout: 10000,
+            enableHighAccuracy: false,
+            timeout: 8000,
             maximumAge: 0,
           }
         )
@@ -100,12 +114,13 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
       )
 
       const sessionId = data.session_id
-      console.log("[PreparationModal] Сессия создана, получен session_id:", sessionId)
+      console.log("[PreparationModal] Сессия создана:", sessionId)
+
       setSessionId(sessionId)
       storage.setSessionId(sessionId)
-      console.log("[PreparationModal] session_id сохранен в localStorage:", sessionId)
       setShowRecording(true)
     } catch (err: any) {
+      console.error("[PreparationModal] Ошибка старта:", err)
       setError(err?.message || p.sessionStartError)
     } finally {
       setLoading(false)
@@ -113,7 +128,13 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
   }
 
   if (showRecording && sessionId) {
-    return <RecordingSession sessionId={sessionId} survey={survey} onComplete={onClose} />
+    return (
+      <RecordingSession
+        sessionId={sessionId}
+        survey={survey}
+        onComplete={onClose}
+      />
+    )
   }
 
   return (
@@ -123,12 +144,14 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
           <DialogTitle className="text-lg font-semibold leading-snug break-words pr-6">
             {survey.title}
           </DialogTitle>
+
           {survey.description?.trim() && (
             <DialogDescription className="break-words whitespace-pre-wrap leading-relaxed text-left">
               {survey.description}
             </DialogDescription>
           )}
         </DialogHeader>
+
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">{p.checklistIntro}</p>
 
@@ -166,15 +189,23 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
               onCheckedChange={setAgreed}
               className="mt-0.5 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
             />
-            <label htmlFor="consent" className="text-sm text-muted-foreground cursor-pointer leading-relaxed">
+            <label
+              htmlFor="consent"
+              className="text-sm text-muted-foreground cursor-pointer leading-relaxed"
+            >
               {p.consentLabel}
             </label>
           </div>
 
           <div className="flex gap-2 pt-1">
-            <Button variant="outline" onClick={onClose} className="flex-1 bg-transparent">
+            <Button
+              variant="outline"
+              onClick={onClose}
+              className="flex-1 bg-transparent"
+            >
               {p.cancel}
             </Button>
+
             <Button
               onClick={handleStart}
               disabled={!agreed || loading}
