@@ -879,7 +879,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               navigator.geolocation.getCurrentPosition(
                 () => resolve(),
                 (err) => {
-                  alert(ui.geoDeniedAlert)
+                  console.warn("[RecordingSession] " + ui.geoDeniedAlert); setError(ui.geoDeniedAlert)
                   setGeoStatus(ui.geoDeniedShort)
                   setError(ui.geoDeniedLong)
                   reject(err)
@@ -950,7 +950,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 : "Доступ к микрофону запрещён. Разрешите доступ в настройках браузера и попробуйте снова.")
             : (err?.message || ui.initError)
 
-          alert(msg)
+
           setMicStatus(locale === "uz" ? "Mikrofon: ruxsat yo'q" : "Микрофон: нет доступа")
           setError(msg)
           setLoading(false)
