@@ -133,6 +133,8 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
         )
       })
 
+      storage.setLastPosition(position.latitude, position.longitude, position.accuracy)
+
       const token = localStorage.getItem("auth_token")
       if (token) {
         apiClient.setToken(token)

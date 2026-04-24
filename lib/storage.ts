@@ -42,4 +42,18 @@ export const storage = {
       localStorage.removeItem("current_session_id")
     }
   },
+  setLastPosition: (lat: number, lng: number, acc: number) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("last_position", JSON.stringify({ lat, lng, acc }))
+    }
+  },
+  getLastPosition: (): { lat: number; lng: number; acc: number } | null => {
+    if (typeof window === "undefined") return null
+    try {
+      const raw = localStorage.getItem("last_position")
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  },
 }

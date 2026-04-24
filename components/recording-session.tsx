@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select"
 import { AlertCircle, Square, Loader2, MapPin, CheckCircle2 } from "lucide-react"
 import { apiClient } from "@/lib/api-client"
+import { storage } from "@/lib/storage"
 import { buildLogicEngine, TallyLogicEngine, LogicResult, Answers } from "@/lib/tally-logic-engine"
 import { getSurveyUiLocale, RECORDING_UI } from "@/lib/survey-ui-strings"
 
@@ -865,71 +866,103 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         const token = localStorage.getItem("auth_token")
         if (token) apiClient.setToken(token)
 
-        if (!navigator.geolocation) {
-          setGeoStatus(ui.geoUnsupportedShort)
-          setError(ui.geoUnsupportedLong)
-          setLoading(false)
-          return
+        const tg = (window as any).Telegram?.WebApp
+        const lm = tg?.LocationManager
+
+        // Получить позицию через Telegram LocationManager (обходит WKWebView ограничения на iOS)
+        const getViaTelegram = (): Promise<{ latitude: number; longitude: number; accuracy: number } | null> => {
+          if (!lm) return Promise.resolve(null)
+          return new Promise((resolve) => {
+            const doGet = () => lm.getLocation((loc: any) => resolve(
+              loc ? { latitude: loc.latitude, longitude: loc.longitude, accuracy: loc.horizontal_accuracy ?? 100 } : null
+            ))
+            lm.isInited ? doGet() : lm.init(doGet)
+          })
         }
 
-        await new Promise<void>((resolve) => {
-          navigator.geolocation.getCurrentPosition(
-            () => resolve(),
-            () => {
+        if (lm) {
+          // iOS Telegram: используем LocationManager
+          const loc = await getViaTelegram()
+          if (loc) {
+            lastPositionRef.current = loc as GeolocationCoordinates
+            setGeoStatus(ui.geoOk(loc.accuracy.toFixed(0)))
+            apiClient.updateLocation(sessionId, loc.latitude, loc.longitude, loc.accuracy).catch(() => {})
+          } else {
+            setGeoStatus(ui.geoPermissionDenied)
+            // Не блокируем — используем сохранённую позицию из подготовки
+          }
+
+          // Периодические обновления через LocationManager
+          const intervalId = setInterval(async () => {
+            const updated = await getViaTelegram()
+            if (updated) {
+              lastPositionRef.current = updated as GeolocationCoordinates
+              setGeoStatus(ui.geoOk(updated.accuracy.toFixed(0)))
+              apiClient.updateLocation(sessionId, updated.latitude, updated.longitude, updated.accuracy).catch(() => {})
+            }
+          }, 30000)
+          locationIntervalRef.current = intervalId as any
+        } else {
+          // Fallback: стандартный navigator.geolocation
+          if (!navigator.geolocation) {
+            setGeoStatus(ui.geoUnsupportedShort)
+            // Не блокируем — продолжаем с сохранённой позицией
+          } else {
+            await new Promise<void>((resolve) => {
               navigator.geolocation.getCurrentPosition(
                 () => resolve(),
-                (err) => {
-                  console.warn("[RecordingSession] geolocation precheck failed:", err)
-                  setGeoStatus(ui.geoDeniedShort)
-                  setError(ui.geoDeniedLong)
-                  resolve()
+                () => {
+                  navigator.geolocation.getCurrentPosition(
+                    () => resolve(),
+                    (err) => {
+                      console.warn("[RecordingSession] geolocation precheck failed:", err)
+                      setGeoStatus(ui.geoDeniedShort)
+                      // Не ставим setError — сессия уже создана с координатами
+                      resolve()
+                    },
+                    { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+                  )
                 },
-                { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
               )
-            },
-            { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
-          )
-        })
+            })
 
-        let watchId: number | null = null
-        let fallbackAttempted = false
+            let watchId: number | null = null
+            let fallbackAttempted = false
 
-        const startWatching = (highAccuracy: boolean) => {
-          if (watchId !== null) navigator.geolocation.clearWatch(watchId)
-          watchId = navigator.geolocation.watchPosition(
-            async (position) => {
-              lastPositionRef.current = position.coords
-              setGeoStatus(ui.geoOk(position.coords.accuracy.toFixed(0)))
-              try {
-                await apiClient.updateLocation(
-                  sessionId,
-                  position.coords.latitude,
-                  position.coords.longitude,
-                  position.coords.accuracy
-                )
-              } catch (err) {
-                console.error("[RecordingSession] Ошибка отправки геолокации:", err)
-              }
-            },
-            (err) => {
-              if (highAccuracy && !fallbackAttempted) {
-                fallbackAttempted = true
-                startWatching(false)
-                return
-              }
-              switch (err.code) {
-                case err.PERMISSION_DENIED: setGeoStatus(ui.geoPermissionDenied); break
-                case err.POSITION_UNAVAILABLE: setGeoStatus(ui.geoPositionUnavailable); break
-                case err.TIMEOUT: setGeoStatus(ui.geoTimeout); break
-                default: setGeoStatus(ui.geoError(err.message))
-              }
-            },
-            { enableHighAccuracy: highAccuracy, timeout: 10000, maximumAge: 5000 }
-          )
+            const startWatching = (highAccuracy: boolean) => {
+              if (watchId !== null) navigator.geolocation.clearWatch(watchId)
+              watchId = navigator.geolocation.watchPosition(
+                async (position) => {
+                  lastPositionRef.current = position.coords
+                  setGeoStatus(ui.geoOk(position.coords.accuracy.toFixed(0)))
+                  try {
+                    await apiClient.updateLocation(sessionId, position.coords.latitude, position.coords.longitude, position.coords.accuracy)
+                  } catch (err) {
+                    console.error("[RecordingSession] Ошибка отправки геолокации:", err)
+                  }
+                },
+                (err) => {
+                  if (highAccuracy && !fallbackAttempted) {
+                    fallbackAttempted = true
+                    startWatching(false)
+                    return
+                  }
+                  switch (err.code) {
+                    case err.PERMISSION_DENIED: setGeoStatus(ui.geoPermissionDenied); break
+                    case err.POSITION_UNAVAILABLE: setGeoStatus(ui.geoPositionUnavailable); break
+                    case err.TIMEOUT: setGeoStatus(ui.geoTimeout); break
+                    default: setGeoStatus(ui.geoError(err.message))
+                  }
+                },
+                { enableHighAccuracy: highAccuracy, timeout: 10000, maximumAge: 5000 }
+              )
+            }
+
+            startWatching(true)
+            locationIntervalRef.current = watchId as any
+          }
         }
-
-        startWatching(true)
-        locationIntervalRef.current = watchId as any
 
         // ✅ FIX: микрофон блокирует сессию так же как геолокация
         let stream: MediaStream
@@ -985,7 +1018,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
       if (locationIntervalRef.current !== null) {
-        navigator.geolocation.clearWatch(locationIntervalRef.current as number)
+        const tg = (window as any).Telegram?.WebApp
+        if (tg?.LocationManager) {
+          clearInterval(locationIntervalRef.current as any)
+        } else {
+          navigator.geolocation?.clearWatch(locationIntervalRef.current as unknown as number)
+        }
         locationIntervalRef.current = null
       }
       streamRef.current?.getTracks().forEach((track) => track.stop())
@@ -1034,20 +1072,34 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
       streamRef.current?.getTracks().forEach((track) => track.stop())
 
-      let position: GeolocationCoordinates
+      let position: { latitude: number; longitude: number; accuracy: number }
 
       if (lastPositionRef.current) {
         position = lastPositionRef.current
       } else {
-        if (!navigator.geolocation) throw new Error(ui.geoNotSupportedThrow)
-        position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
-          const timeoutId = setTimeout(() => reject(new Error(ui.geoTimeoutThrow)), 15000)
-          navigator.geolocation.getCurrentPosition(
-            (pos) => { clearTimeout(timeoutId); resolve(pos.coords) },
-            (err) => { clearTimeout(timeoutId); reject(err) },
-            { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 }
-          )
-        })
+        // Fallback 1: сохранённые координаты из подготовки
+        const stored = storage.getLastPosition()
+        if (stored) {
+          console.warn("[RecordingSession] finishRecording: используем сохранённую позицию")
+          position = { latitude: stored.lat, longitude: stored.lng, accuracy: stored.acc }
+        } else {
+          // Fallback 2: попытка через navigator.geolocation
+          try {
+            position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
+              if (!navigator.geolocation) { reject(new Error(ui.geoNotSupportedThrow)); return }
+              const timeoutId = setTimeout(() => reject(new Error(ui.geoTimeoutThrow)), 15000)
+              navigator.geolocation.getCurrentPosition(
+                (pos) => { clearTimeout(timeoutId); resolve(pos.coords) },
+                (err) => { clearTimeout(timeoutId); reject(err) },
+                { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 }
+              )
+            })
+          } catch {
+            // Последний резерв — нули (сессия всё равно завершится)
+            console.error("[RecordingSession] finishRecording: координаты недоступны, используем 0,0")
+            position = { latitude: 0, longitude: 0, accuracy: 0 }
+          }
+        }
       }
 
       const snapshotAnswers = answersRef.current
@@ -1093,7 +1145,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         })
 
-      await apiClient.completeSession(sessionId, position.latitude, position.longitude, position.accuracy, surveyAnswersList, isComplete)
+      await apiClient.completeSession(sessionId, position.latitude, position.longitude, position.accuracy as number, surveyAnswersList, isComplete)
       onComplete()
     } catch (err: any) {
       setError(err?.message || ui.sessionFinishError)
