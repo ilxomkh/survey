@@ -139,6 +139,7 @@ export type PreparationUiStrings = {
   geoUnsupported: string
   geoDeniedAlert: string
   geoDeniedError: string
+  geoUnavailable: string
   sessionStartError: string
   checklistIntro: string
   geoBullet: string
@@ -155,6 +156,7 @@ const RU_PREP: PreparationUiStrings = {
   geoUnsupported: "Геолокация не поддерживается вашим браузером",
   geoDeniedAlert: "Геолокация запрещена. Разрешите доступ в настройках телефона",
   geoDeniedError: "Геолокация запрещена. Разрешите доступ в настройках телефона",
+  geoUnavailable: "Не удалось получить геолокацию. Проверьте GPS и повторите попытку",
   sessionStartError: "Ошибка запуска сессии",
   checklistIntro: "Перед началом убедитесь, что всё готово:",
   geoBullet: "Геолокация будет запрошена при старте",
@@ -171,6 +173,7 @@ const UZ_PREP: PreparationUiStrings = {
   geoUnsupported: "Brauzeringiz geolokatsiyani qo'llab-quvvatlamaydi",
   geoDeniedAlert: "Geolokatsiya taqiqlangan. Sozlamalarda ruxsat bering",
   geoDeniedError: "Geolokatsiya taqiqlangan. Sozlamalarda ruxsat bering",
+  geoUnavailable: "Geolokatsiya aniqlanmadi. GPS ni tekshirib, qayta urinib ko'ring",
   sessionStartError: "Sessiyani boshlashda xato",
   checklistIntro: "Boshlashdan oldin tayyorligiga ishonch hosil qiling:",
   geoBullet: "Boshlanganda geolokatsiya so'raladi",
