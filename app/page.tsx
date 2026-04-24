@@ -5,6 +5,7 @@ import { LoginPage } from "@/components/login-page"
 import { AgentDashboard } from "@/components/agent-dashboard"
 import { SupervisorDashboard } from "@/components/supervisor-dashboard"
 import { Loader2 } from "lucide-react"
+import { apiClient } from "@/lib/api-client"
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -15,6 +16,7 @@ export default function Home() {
     const token = localStorage.getItem("auth_token")
     const userRole = localStorage.getItem("user_role")
     if (token && userRole) {
+      apiClient.setToken(token)
       setIsAuthenticated(true)
       setRole(userRole)
     }
@@ -27,8 +29,10 @@ export default function Home() {
   }
 
   const handleLogout = () => {
+    apiClient.clearToken()
     localStorage.removeItem("auth_token")
     localStorage.removeItem("user_role")
+    localStorage.removeItem("agent_id")
     setIsAuthenticated(false)
     setRole(null)
   }
