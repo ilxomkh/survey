@@ -59,6 +59,43 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
       const position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
         console.log("[PreparationModal] Запрос геолокации...")
 
+        const tg = (window as any).Telegram?.WebApp
+        const lm = tg?.LocationManager
+
+        // Telegram LocationManager API (Bot API 8.0+) — обходит проблему WKWebView на iOS
+        if (lm) {
+          console.log("[PreparationModal] Используем Telegram LocationManager")
+          const doGetLocation = () => {
+            lm.getLocation((loc: any) => {
+              if (loc) {
+                console.log("[PreparationModal] ✅ Геолокация через LocationManager:", loc)
+                resolve({
+                  latitude: loc.latitude,
+                  longitude: loc.longitude,
+                  accuracy: loc.horizontal_accuracy ?? 100,
+                } as GeolocationCoordinates)
+              } else {
+                console.warn("[PreparationModal] LocationManager вернул null — нет доступа")
+                if (lm.isAccessGranted === false) {
+                  lm.openSettings()
+                  reject(new Error(p.geoDeniedError))
+                } else {
+                  reject(new Error(p.geoUnavailable))
+                }
+              }
+            })
+          }
+
+          if (!lm.isInited) {
+            lm.init(doGetLocation)
+          } else {
+            doGetLocation()
+          }
+          return
+        }
+
+        // Fallback: стандартный navigator.geolocation
+        console.log("[PreparationModal] Используем navigator.geolocation")
         navigator.geolocation.getCurrentPosition(
           (success) => {
             console.log("[PreparationModal] ✅ Геолокация получена:", success)
@@ -79,12 +116,7 @@ export function PreparationModal({ survey, onClose }: PreparationModalProps) {
               },
               (fallbackErr) => {
                 console.error("[PreparationModal] ❌ Ошибка fallback геолокации:", fallbackErr.code, fallbackErr.message)
-
-                if (fallbackErr.code === 1) {
-                  reject(new Error(p.geoDeniedError))
-                } else {
-                  reject(new Error(p.geoUnavailable))
-                }
+                reject(new Error(fallbackErr.code === 1 ? p.geoDeniedError : p.geoUnavailable))
               },
               {
                 enableHighAccuracy: false,
