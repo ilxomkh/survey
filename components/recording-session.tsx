@@ -231,6 +231,67 @@ function titleMatchesAnyFragment(title: string, fragments: readonly string[]): b
   return fragments.some((f) => t.includes(f.toLowerCase()))
 }
 
+const P2P_TRANSFER_TITLE_FRAGMENTS = [
+  "Перевести деньги другу/родственнику",
+  "Перевести деньги другу",
+  "P2P",
+] as const
+
+const P2P_TRANSFER_ALLOWED_OPTIONS = [
+  "Paynet",
+  "Ничего/Не знаю",
+  "Другой [записать]",
+] as const
+
+function normalizeSurveyOptionText(text: string): string {
+  return text.toLowerCase().replace(/\s*\/\s*/g, "/").replace(/\s+/g, " ").trim()
+}
+
+function isP2PTransferQuestion(question: Question): boolean {
+  if (question.type !== "checkbox") return false
+  const title = normalizeSurveyOptionText(question.title)
+  return P2P_TRANSFER_TITLE_FRAGMENTS.every((fragment) =>
+    title.includes(normalizeSurveyOptionText(fragment))
+  )
+}
+
+function limitP2PTransferOptions(question: Question): Question {
+  if (!isP2PTransferQuestion(question) || !question.options?.length) return question
+
+  const optionByDisplayText = new Map<string, QuestionOption>()
+  for (const option of question.options) {
+    const text = normalizeSurveyOptionText(option.text)
+    if (text === "paynet") {
+      optionByDisplayText.set("Paynet", { ...option, text: "Paynet" })
+    } else if (text.includes("ничего") && text.includes("знаю")) {
+      optionByDisplayText.set("Ничего/Не знаю", { ...option, text: "Ничего/Не знаю" })
+    } else if (text.includes("другой") || text.includes("boshqa") || text.includes("other")) {
+      optionByDisplayText.set("Другой [записать]", { ...option, text: "Другой [записать]" })
+    }
+  }
+
+  const options = P2P_TRANSFER_ALLOWED_OPTIONS
+    .map((displayText) => optionByDisplayText.get(displayText))
+    .filter((option): option is QuestionOption => Boolean(option))
+
+  if (options.length !== P2P_TRANSFER_ALLOWED_OPTIONS.length) {
+    console.warn("[RecordingSession] P2P transfer options were not limited: expected options not found", {
+      question: question.title,
+      found: options.map((option) => option.text),
+      expected: P2P_TRANSFER_ALLOWED_OPTIONS,
+    })
+    return question
+  }
+
+  return {
+    ...question,
+    options,
+    checkboxLockUuids: question.checkboxLockUuids?.filter((uuid) =>
+      options.some((option) => option.uuid === uuid)
+    ),
+  }
+}
+
 /** Q2: по тексту вопроса или единственный чекбокс с полем «другой» и несколькими вариантами */
 function resolveMarketplaceQ2(questions: Question[]): Question | undefined {
   const byTitle = questions.find(
@@ -355,14 +416,15 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   // ─── Q3: только выбранные в Q2; «Другой» → текст респондента ─
   const questionsResolved = useMemo(() => {
-    const q2 = resolveMarketplaceQ2(questions)
-    const q3Index = resolveFrequencyQ3Index(questions, q2)
-    if (!q2 || q3Index === -1) return questions
+    const limitedQuestions = questions.map(limitP2PTransferOptions)
+    const q2 = resolveMarketplaceQ2(limitedQuestions)
+    const q3Index = resolveFrequencyQ3Index(limitedQuestions, q2)
+    if (!q2 || q3Index === -1) return limitedQuestions
 
     const selected = answers[q2.id]
-    if (!Array.isArray(selected) || selected.length === 0) return questions
+    if (!Array.isArray(selected) || selected.length === 0) return limitedQuestions
 
-    const q3 = questions[q3Index]
+    const q3 = limitedQuestions[q3Index]
     const newOptions: QuestionOption[] = []
 
     for (const uuid of selected) {
@@ -380,9 +442,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       }
     }
 
-    if (newOptions.length === 0) return questions
+    if (newOptions.length === 0) return limitedQuestions
 
-    return questions.map((q, i) =>
+    return limitedQuestions.map((q, i) =>
       i === q3Index
         ? {
           ...q3,
@@ -396,8 +458,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   // ─── Q2 (маркетплейсы): случайный порядок; учитываем Tally lockInPlace или последний вариант ─
   const marketplaceQ2OptionOrder = useMemo(() => {
-    const q2 = resolveMarketplaceQ2(questions)
+    const q2 = resolveMarketplaceQ2(questionsResolved)
     if (!q2?.options?.length) return null
+    if (isP2PTransferQuestion(q2)) {
+      return {
+        questionId: q2.id,
+        uuids: q2.options.map((o) => o.uuid),
+      }
+    }
     const lockSet = new Set(
       (q2.checkboxLockUuids ?? []).filter((u) => typeof u === "string" && u.length > 0)
     )
@@ -409,7 +477,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       questionId: q2.id,
       uuids: shuffled.map((o) => o.uuid),
     }
-  }, [questions])
+  }, [questionsResolved])
 
   // ─── Visible questions (yashirilmaganlar) ──────────────────
   const visibleQuestions = questionsResolved.filter(
