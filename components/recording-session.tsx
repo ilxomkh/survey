@@ -237,8 +237,7 @@ const P2P_TRANSFER_TITLE_FRAGMENTS = [
   "P2P",
 ] as const
 
-const P2P_TRANSFER_ALLOWED_OPTIONS = [
-  "Paynet",
+const P2P_TRANSFER_EXTRA_OPTIONS = [
   "Ничего/Не знаю",
   "Другой [записать]",
 ] as const
@@ -255,30 +254,61 @@ function isP2PTransferQuestion(question: Question): boolean {
   )
 }
 
-function limitP2PTransferOptions(question: Question): Question {
+function findOptionByNormalizedText(options: QuestionOption[] | undefined, text: string): QuestionOption | undefined {
+  const normalized = normalizeSurveyOptionText(text)
+  return options?.find((option) => normalizeSurveyOptionText(option.text) === normalized)
+}
+
+function isNoKnowledgeOptionText(text: string): boolean {
+  const normalized = normalizeSurveyOptionText(text)
+  return normalized.includes("ничего") && normalized.includes("знаю")
+}
+
+function isOtherOptionText(text: string): boolean {
+  const normalized = normalizeSurveyOptionText(text)
+  return normalized.includes("другой") || normalized.includes("boshqa") || normalized.includes("other")
+}
+
+function limitP2PTransferOptions(question: Question, previousQuestion: Question | undefined, answersMap: Answers): Question {
   if (!isP2PTransferQuestion(question) || !question.options?.length) return question
 
-  const optionByDisplayText = new Map<string, QuestionOption>()
+  const selectedPreviousUuids = Array.isArray(previousQuestion ? answersMap[previousQuestion.id] : undefined)
+    ? (answersMap[previousQuestion!.id] as string[])
+    : []
+  if (!previousQuestion?.options?.length || selectedPreviousUuids.length === 0) return question
+
+  const selectedOptions: QuestionOption[] = []
+  for (const uuid of selectedPreviousUuids) {
+    const previousOption = previousQuestion.options.find((option) => option.uuid === uuid)
+    if (!previousOption) continue
+
+    const matchingP2POption = findOptionByNormalizedText(question.options, previousOption.text)
+    selectedOptions.push(matchingP2POption ?? { uuid: previousOption.uuid, text: previousOption.text })
+  }
+
+  const extraOptionsByDisplayText = new Map<string, QuestionOption>()
   for (const option of question.options) {
-    const text = normalizeSurveyOptionText(option.text)
-    if (text === "paynet") {
-      optionByDisplayText.set("Paynet", { ...option, text: "Paynet" })
-    } else if (text.includes("ничего") && text.includes("знаю")) {
-      optionByDisplayText.set("Ничего/Не знаю", { ...option, text: "Ничего/Не знаю" })
-    } else if (text.includes("другой") || text.includes("boshqa") || text.includes("other")) {
-      optionByDisplayText.set("Другой [записать]", { ...option, text: "Другой [записать]" })
+    if (isNoKnowledgeOptionText(option.text)) {
+      extraOptionsByDisplayText.set("Ничего/Не знаю", { ...option, text: "Ничего/Не знаю" })
+    } else if (isOtherOptionText(option.text)) {
+      extraOptionsByDisplayText.set("Другой [записать]", { ...option, text: "Другой [записать]" })
     }
   }
 
-  const options = P2P_TRANSFER_ALLOWED_OPTIONS
-    .map((displayText) => optionByDisplayText.get(displayText))
+  const extraOptions = P2P_TRANSFER_EXTRA_OPTIONS
+    .map((displayText) => extraOptionsByDisplayText.get(displayText))
     .filter((option): option is QuestionOption => Boolean(option))
+  const options = [...selectedOptions, ...extraOptions].filter(
+    (option, index, all) => all.findIndex((item) => item.uuid === option.uuid) === index
+  )
 
-  if (options.length !== P2P_TRANSFER_ALLOWED_OPTIONS.length) {
+  if (selectedOptions.length === 0 || extraOptions.length !== P2P_TRANSFER_EXTRA_OPTIONS.length) {
     console.warn("[RecordingSession] P2P transfer options were not limited: expected options not found", {
       question: question.title,
+      previousQuestion: previousQuestion?.title,
+      selectedPreviousUuids,
       found: options.map((option) => option.text),
-      expected: P2P_TRANSFER_ALLOWED_OPTIONS,
+      expectedExtraOptions: P2P_TRANSFER_EXTRA_OPTIONS,
     })
     return question
   }
@@ -416,7 +446,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   // ─── Q3: только выбранные в Q2; «Другой» → текст респондента ─
   const questionsResolved = useMemo(() => {
-    const limitedQuestions = questions.map(limitP2PTransferOptions)
+    const limitedQuestions = questions.map((question, index) =>
+      limitP2PTransferOptions(question, questions[index - 1], answers)
+    )
     const q2 = resolveMarketplaceQ2(limitedQuestions)
     const q3Index = resolveFrequencyQ3Index(limitedQuestions, q2)
     if (!q2 || q3Index === -1) return limitedQuestions
