@@ -1351,6 +1351,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       setLogicResult(newResult)
 
       if (newResult.jumpToPageUuid && !isOtherSelected) {
+        console.log("[DEBUG] JUMP_TO_PAGE triggered! questionId:", questionId, "-> jumpToPage:", newResult.jumpToPageUuid, "| currentIdx:", currentQuestionIndex, "| visible:", visibleQuestions.length)
         setShowFinishConfirm(true)
         return
       }
