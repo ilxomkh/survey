@@ -1318,18 +1318,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     const newAnswers = { ...answers, [questionId]: value }
     setAnswers(newAnswers)
 
-    if (logicEngine) {
-      const result = logicEngine.evaluate(newAnswers)
-      setLogicResult(result)
-      if (result.hiddenGroupUuids.size > 0) {
-        console.log("[DEBUG] Hidden uuids:", [...result.hiddenGroupUuids])
-      }
+    const isOtherSelected =
+      currentQuestion?.otherOptionUuid &&
+      currentQuestion?.otherInputGroupId &&
+      value === currentQuestion.otherOptionUuid
 
-      const isOtherSelected =
-        currentQuestion?.otherOptionUuid &&
-        currentQuestion?.otherInputGroupId &&
-        value === currentQuestion.otherOptionUuid
-      if (result.jumpToPageUuid && !isOtherSelected) {
+    let newResult = logicResult
+    if (logicEngine) {
+      newResult = logicEngine.evaluate(newAnswers)
+      setLogicResult(newResult)
+
+      if (newResult.jumpToPageUuid && !isOtherSelected) {
         setShowFinishConfirm(true)
         return
       }
@@ -1342,12 +1341,23 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       !(typeof value === "number" && Number.isNaN(value))
 
     if (
-      isLastVisible &&
       currentQuestion?.id === questionId &&
-      !["text", "number"].includes(currentQuestion?.type ?? "") &&
+      !["text", "number", "multi_text"].includes(currentQuestion?.type ?? "") &&
       answeredForFinish
     ) {
-      setShowFinishConfirm(true)
+      // compute visibleQuestions with the NEW logic result (not stale state)
+      const newVisible = questionsResolved.filter((q) => {
+        if (newResult.hiddenGroupUuids.has(q.id)) return false
+        if (q.type === "multi_text" && q.subFields) {
+          if (q.subFields.every((f) => newResult.hiddenGroupUuids.has(f.id))) return false
+        }
+        return true
+      })
+      const curIdx = newVisible.findIndex((q) => q.id === questionId)
+      const isLastInNew = curIdx >= 0 && curIdx === newVisible.length - 1
+      if (isLastInNew) {
+        setShowFinishConfirm(true)
+      }
     }
   }
 
