@@ -853,8 +853,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         const inputFieldBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_FIELD")
         if (inputFieldBlocks.length > 0) {
-          const subFields = inputFieldBlocks.map((b: any) => ({ id: b.groupUuid || b.uuid }))
-          const groupId = subFields[0]!.id
+          const groupId = inputFieldBlocks[0]?.groupUuid || titleBlock.groupUuid
+          const subFields = inputFieldBlocks.map((b: any) => ({ id: b.uuid || b.groupUuid }))
           return {
             id: groupId,
             title: questionText,
@@ -865,7 +865,21 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        const textBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
+        const allTextBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
+        if (allTextBlocks.length > 1) {
+          const groupId = allTextBlocks[0]?.groupUuid || titleBlock.groupUuid
+          const subFields = allTextBlocks.map((b: any) => ({ id: b.uuid || b.groupUuid }))
+          return {
+            id: groupId,
+            title: questionText,
+            rawSchema,
+            type: "multi_text",
+            required: titleBlock.payload?.isRequired === true,
+            subFields,
+          }
+        }
+
+        const textBlock = allTextBlocks[0] ?? null
         const groupId = textBlock?.groupUuid || titleBlock.groupUuid
         return {
           id: groupId,
@@ -1748,9 +1762,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     key={field.id}
                     type="text"
                     value={typeof answers[field.id] === "string" ? answers[field.id] : ""}
-                    onChange={(e) =>
-                      setAnswers((prev) => ({ ...prev, [field.id]: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      const newVal = e.target.value
+                      setAnswers((prev) => {
+                        const updated = { ...prev, [field.id]: newVal }
+                        // sync question.id so conditional logic (IS_NOT_EMPTY) sees this answer
+                        const firstFilled = currentQuestion.subFields!
+                          .map((f) => (f.id === field.id ? newVal : String(prev[f.id] ?? "")))
+                          .find((v) => v.trim().length > 0) ?? ""
+                        updated[currentQuestion.id] = firstFilled
+                        return updated
+                      })
+                    }}
                     onFocus={() => setKeyboardOpen(true)}
                     onBlur={() => setTimeout(() => setKeyboardOpen(false), 150)}
                     placeholder={`${idx + 1}.`}
