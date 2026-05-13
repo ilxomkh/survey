@@ -1359,14 +1359,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           return true
         })
         const targetIdx = findFirstQuestionAfterPageBreak(newResult.jumpToPageUuid, rawBlocks, newVisible)
-        if (targetIdx >= 0 && currentQuestionIndex < targetIdx) {
-          setCurrentQuestionIndex(targetIdx)
-          return
-        } else if (targetIdx < 0) {
+        if (targetIdx < 0) {
+          // No visible questions after target PAGE_BREAK → real end of survey
           setShowFinishConfirm(true)
           return
         }
-        // already past the jump target — continue normally
+        // targetIdx >= 0: SHOW_BLOCKS already hides irrelevant questions,
+        // normal question-by-question flow will skip hidden ones automatically
       }
     }
 
