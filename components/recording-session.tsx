@@ -34,6 +34,8 @@ interface Question {
   id: string
   title: string
   rawSchema?: any
+  /** HEADING_2 block text preceding this question (e.g. "A4. Какие приложения...") */
+  contextHeading?: string
   type: string
   options?: QuestionOption[]
   required?: boolean
@@ -735,6 +737,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         const rawSchema = titleBlock.payload?.safeHTMLSchema || null
 
         const titleBlockIndex = blocks.indexOf(titleBlock)
+        const prevTitleBlockIndex =
+          questionIndex > 0 ? blocks.indexOf(titleBlocks[questionIndex - 1]) + 1 : 0
+        const headingBlock = blocks
+          .slice(prevTitleBlockIndex, titleBlockIndex)
+          .find((b: any) => b.type === "HEADING_2")
+        const contextHeading = headingBlock
+          ? (extractTextFromSchema(headingBlock.payload?.safeHTMLSchema) ||
+              headingBlock.payload?.title ||
+              headingBlock.text ||
+              "").trim() || undefined
+          : undefined
+
         const nextTitleBlockIndex =
           questionIndex < titleBlocks.length - 1
             ? blocks.indexOf(titleBlocks[questionIndex + 1])
@@ -751,6 +765,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             title: questionText,
             rawSchema,
+            contextHeading,
             type: "linear_scale",
             scaleMin: scaleBlock?.payload?.startValue ?? scaleBlock?.payload?.start ?? 0,
             scaleMax: scaleBlock?.payload?.endValue ?? scaleBlock?.payload?.end ?? 10,
@@ -765,6 +780,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             title: questionText,
             rawSchema,
+            contextHeading,
             type: "number",
             required: titleBlock.payload?.isRequired === true,
           }
@@ -783,6 +799,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             title: questionText,
             rawSchema,
+            contextHeading,
             type: "dropdown",
             options,
             required: titleBlock.payload?.isRequired === true,
@@ -824,6 +841,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             title: questionText,
             rawSchema,
+            contextHeading,
             type: "checkbox",
             options: shuffledOptions,
             multiple: true,
@@ -864,6 +882,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             title: questionText,
             rawSchema,
+            contextHeading,
             type: "multiple_choice",
             options: mcShuffled,
             required: titleBlock.payload?.isRequired === true,
@@ -877,6 +896,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: titleBlock.groupUuid,
             title: questionText,
             rawSchema,
+            contextHeading,
             type: "yes_no",
             required: titleBlock.payload?.isRequired === true,
           }
@@ -890,6 +910,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             title: questionText,
             rawSchema,
+            contextHeading,
             type: "multi_text",
             required: titleBlock.payload?.isRequired === true,
             subFields,
@@ -904,6 +925,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             title: questionText,
             rawSchema,
+            contextHeading,
             type: "multi_text",
             required: titleBlock.payload?.isRequired === true,
             subFields,
@@ -1556,6 +1578,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           </p>
         ) : currentQuestion ? (
           <div className="space-y-4">
+            {currentQuestion.contextHeading && (
+              <p className="text-sm font-semibold text-foreground leading-snug">
+                {renderCurlyBraceInnerRed(currentQuestion.contextHeading, "ctx-")}
+              </p>
+            )}
             <h3 className="font-medium text-base leading-snug">
               {currentQuestion.rawSchema
                 ? renderSchemaWithReplacements(currentQuestion.rawSchema, currentQuestion.id)
