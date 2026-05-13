@@ -44,6 +44,8 @@ interface Question {
   otherInputGroupId?: string
   /** UUID вариантов, зафиксированных в Tally (payload.lockInPlace), не перемешивать */
   checkboxLockUuids?: string[]
+  /** Для multi_text: отдельные поля (каждый INPUT_FIELD — отдельный uuid) */
+  subFields?: { id: string }[]
 }
 
 /** Текст из поля «другой» Q2/Q3 (как в оригинальной логике @). */
@@ -512,9 +514,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }, [questionsResolved])
 
   // ─── Visible questions (yashirilmaganlar) ──────────────────
-  const visibleQuestions = questionsResolved.filter(
-    (q) => !logicResult.hiddenGroupUuids.has(q.id)
-  )
+  const visibleQuestions = questionsResolved.filter((q) => {
+    if (logicResult.hiddenGroupUuids.has(q.id)) return false
+    if (q.type === "multi_text" && q.subFields) {
+      // скрываем если ВСЕ subField uuid скрыты
+      if (q.subFields.every((f) => logicResult.hiddenGroupUuids.has(f.id))) return false
+    }
+    return true
+  })
   answersRef.current = answers
   visibleQuestionsRef.current = visibleQuestions
 
@@ -844,6 +851,20 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
+        const inputFieldBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_FIELD")
+        if (inputFieldBlocks.length > 0) {
+          const subFields = inputFieldBlocks.map((b: any) => ({ id: b.groupUuid || b.uuid }))
+          const groupId = subFields[0]!.id
+          return {
+            id: groupId,
+            title: questionText,
+            rawSchema,
+            type: "multi_text",
+            required: titleBlock.payload?.isRequired === true,
+            subFields,
+          }
+        }
+
         const textBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
         const groupId = textBlock?.groupUuid || titleBlock.groupUuid
         return {
@@ -904,6 +925,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             type: q.type,
           })))
           console.log("[DEBUG] Engine rules count:", engine.rules.length)
+          console.log("[DEBUG] Engine rules full:", JSON.stringify(engine.rules, null, 2))
+          console.log("[DEBUG] INPUT_FIELD blocks:", rawBlocks.filter((b: any) => b.type === "INPUT_FIELD").map((b: any) => ({ uuid: b.uuid, groupUuid: b.groupUuid, type: b.type })))
+          console.log("[DEBUG] All block types:", [...new Set(rawBlocks.map((b: any) => b.type))].join(", "))
 
           if (extractedQuestions.length === 0) {
             const blockTypes = rawBlocks.map((b: any) => `${b.type}/${b.groupType}`).join(", ")
@@ -986,7 +1010,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           if (loc) {
             lastPositionRef.current = loc as GeolocationCoordinates
             setGeoStatus(ui.geoOk(loc.accuracy.toFixed(0)))
-            apiClient.updateLocation(sessionId, loc.latitude, loc.longitude, loc.accuracy).catch(() => {})
+            apiClient.updateLocation(sessionId, loc.latitude, loc.longitude, loc.accuracy).catch(() => { })
           } else {
             setGeoStatus(ui.geoPermissionDenied)
             // Не блокируем — используем сохранённую позицию из подготовки
@@ -998,7 +1022,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             if (updated) {
               lastPositionRef.current = updated as GeolocationCoordinates
               setGeoStatus(ui.geoOk(updated.accuracy.toFixed(0)))
-              apiClient.updateLocation(sessionId, updated.latitude, updated.longitude, updated.accuracy).catch(() => {})
+              apiClient.updateLocation(sessionId, updated.latitude, updated.longitude, updated.accuracy).catch(() => { })
             }
           }, 30000)
           locationIntervalRef.current = intervalId as any
@@ -1079,8 +1103,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             err?.name === "PermissionDeniedError"
           const msg = isDenied
             ? (locale === "uz"
-                ? "Mikrofonga ruxsat berilmadi. Iltimos, brauzer sozlamalarida ruxsat bering va qayta urinib ko'ring."
-                : "Доступ к микрофону запрещён. Разрешите доступ в настройках браузера и попробуйте снова.")
+              ? "Mikrofonga ruxsat berilmadi. Iltimos, brauzer sozlamalarida ruxsat bering va qayta urinib ko'ring."
+              : "Доступ к микрофону запрещён. Разрешите доступ в настройках браузера и попробуйте снова.")
             : (err?.message || ui.initError)
 
 
@@ -1206,6 +1230,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       const snapshotVisible = visibleQuestionsRef.current
 
       const isComplete = snapshotVisible.every((q) => {
+        if (q.type === "multi_text") {
+          return (q.subFields ?? []).some(
+            (f) => typeof snapshotAnswers[f.id] === "string" && (snapshotAnswers[f.id] as string).trim().length > 0
+          )
+        }
         const val = snapshotAnswers[q.id]
         if (val === undefined || val === null || val === "") return false
         if (Array.isArray(val) && val.length === 0) return false
@@ -1214,12 +1243,24 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
       const surveyAnswersList = snapshotVisible
         .filter((q) => {
+          if (q.type === "multi_text") {
+            return (q.subFields ?? []).some(
+              (f) => typeof snapshotAnswers[f.id] === "string" && (snapshotAnswers[f.id] as string).trim().length > 0
+            )
+          }
           const val = snapshotAnswers[q.id]
           if (val === undefined || val === null || val === "") return false
           if (Array.isArray(val) && val.length === 0) return false
           return true
         })
         .map((q) => {
+          if (q.type === "multi_text") {
+            const value = (q.subFields ?? [])
+              .map((f) => snapshotAnswers[f.id])
+              .filter((v) => typeof v === "string" && (v as string).trim().length > 0)
+            return { key: q.id, question: q.title, type: q.type, value }
+          }
+
           let value = snapshotAnswers[q.id]
 
           if (q.type === "multiple_choice" && q.options) {
@@ -1332,6 +1373,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         break
       case "text":
         answered = typeof v === "string" && v.trim().length > 0
+        break
+      case "multi_text":
+        answered = (currentQuestion.subFields ?? []).some(
+          (f) => typeof answers[f.id] === "string" && (answers[f.id] as string).trim().length > 0
+        )
         break
       case "yes_no":
         answered = v === "yes" || v === "no"
@@ -1693,6 +1739,25 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 rows={4}
                 className="w-full p-3 text-sm border-2 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
               />
+            )}
+
+            {currentQuestion.type === "multi_text" && currentQuestion.subFields && (
+              <div className="space-y-2">
+                {currentQuestion.subFields.map((field, idx) => (
+                  <input
+                    key={field.id}
+                    type="text"
+                    value={typeof answers[field.id] === "string" ? answers[field.id] : ""}
+                    onChange={(e) =>
+                      setAnswers((prev) => ({ ...prev, [field.id]: e.target.value }))
+                    }
+                    onFocus={() => setKeyboardOpen(true)}
+                    onBlur={() => setTimeout(() => setKeyboardOpen(false), 150)}
+                    placeholder={`${idx + 1}.`}
+                    className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  />
+                ))}
+              </div>
             )}
 
             {currentQuestion.type === "yes_no" && (

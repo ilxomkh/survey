@@ -172,8 +172,19 @@ export function buildLogicEngine(blocks: any[]): TallyLogicEngine {
     return rule.conditionals.every((c) => evalCondition(c, answers))
   }
 
+  // Blocks that appear in any SHOW_BLOCKS action are hidden by default —
+  // they only become visible when the corresponding rule fires.
+  const defaultHiddenByShowBlocks = new Set<string>()
+  for (const rule of rules) {
+    for (const action of rule.actions) {
+      if (action.type === "SHOW_BLOCKS" && action.blocks) {
+        for (const uuid of action.blocks) defaultHiddenByShowBlocks.add(uuid)
+      }
+    }
+  }
+
   function evaluate(answers: Answers): LogicResult {
-    const hiddenByRule = new Set<string>()
+    const hiddenByRule = new Set<string>(defaultHiddenByShowBlocks)
     const shownByRule = new Set<string>()
     let jumpToPageUuid: string | null = null
 
@@ -191,7 +202,7 @@ export function buildLogicEngine(blocks: any[]): TallyLogicEngine {
       }
     }
 
-    // SHOW_BLOCKS HIDE_BLOCKS'ni bekor qiladi
+    // SHOW_BLOCKS overrides HIDE_BLOCKS (including the default-hidden set)
     for (const uuid of shownByRule) hiddenByRule.delete(uuid)
 
     return { hiddenGroupUuids: hiddenByRule, jumpToPageUuid }
