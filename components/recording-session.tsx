@@ -176,8 +176,8 @@ function normalizeCurlyBraceChars(text: string): string {
 /** Tally иногда склеивает закрывающую `}` со стилевым токеном (`}tagfont-weight`) в одну строку. */
 function sanitizeTallyTextLeak(text: string): string {
   if (!text) return text
-  // Strip interviewer instruction blocks like {Some note}tag or {Some note}
-  return text.replace(/\{[^}]*\}\s*tag[a-z0-9-]*/gi, "").replace(/\{[^}]*\}/g, "").trimEnd()
+  // Strip only Tally CSS marker suffix glued directly to } (no space), keep {…} content visible
+  return text.replace(/\}tag[a-z][a-z0-9-]*/g, "}").trimEnd()
 }
 
 /** Текст внутри `{…}` — явный красный (виден поверх цвета Tally); скобки — цвет текста вопроса */
