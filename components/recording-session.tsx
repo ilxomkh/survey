@@ -525,16 +525,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   answersRef.current = answers
   visibleQuestionsRef.current = visibleQuestions
 
-  // [DEBUG] positions of Современный in visibleQuestions
-  if (questionsResolved.length > 0 && visibleQuestions.length > 0) {
-    const modernPositions = visibleQuestions
-      .map((q, i) => q.title.toLowerCase().includes("современн") ? `${i}:${q.id.slice(0,8)}` : null)
-      .filter(Boolean)
-    if (modernPositions.length > 0) {
-      console.log(`[DEBUG] Современный at visibleQ positions: [${modernPositions.join(", ")}] / total visible=${visibleQuestions.length}`)
-    }
-  }
-
   // ─── Парсинг блоков Tally ───────────────────────────────────
   const extractTextFromSchema = (schema: any): string => {
     if (!schema) return ""
@@ -943,28 +933,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const engine = buildLogicEngine(rawBlocks)
           setLogicEngine(engine)
 
-          console.log("[DEBUG] Questions parsed:", extractedQuestions.map(q => ({
-            id: q.id,
-            title: q.title.slice(0, 40),
-            type: q.type,
-          })))
-          console.log("[DEBUG] Engine rules count:", engine.rules.length)
-          console.log("[DEBUG] Engine rules full:", JSON.stringify(engine.rules, null, 2))
-          console.log("[DEBUG] INPUT_FIELD blocks:", rawBlocks.filter((b: any) => b.type === "INPUT_FIELD").map((b: any) => ({ uuid: b.uuid, groupUuid: b.groupUuid, type: b.type })))
-          console.log("[DEBUG] All block types:", [...new Set(rawBlocks.map((b: any) => b.type))].join(", "))
-
-          // найти parsed ID вопросов "Современный"
-          const modernParsed = extractedQuestions.filter((q: any) =>
-            q.title.toLowerCase().includes("современн")
-          )
-          console.log("[DEBUG] Parsed 'Современный' questions:", JSON.stringify(modernParsed.map((q: any) => ({ id: q.id, title: q.title, type: q.type }))))
-          // найти правила для этих ID
-          const modernParsedIds = modernParsed.map((q: any) => q.id)
-          const modernRules = engine.rules.filter((r: any) =>
-            r.actions.some((a: any) => a.blocks?.some((b: string) => modernParsedIds.includes(b)))
-          )
-          console.log("[DEBUG] Rules for parsed 'Современный' ids:", JSON.stringify(modernRules, null, 2))
-
           if (extractedQuestions.length === 0) {
             const blockTypes = rawBlocks.map((b: any) => `${b.type}/${b.groupType}`).join(", ")
             console.warn("[RecordingSession] 0 вопросов из", rawBlocks.length, "блоков. Типы:", blockTypes)
@@ -1351,7 +1319,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       setLogicResult(newResult)
 
       if (newResult.jumpToPageUuid && !isOtherSelected) {
-        console.log("[DEBUG] JUMP_TO_PAGE triggered! questionId:", questionId, "-> jumpToPage:", newResult.jumpToPageUuid, "| currentIdx:", currentQuestionIndex, "| visible:", visibleQuestions.length)
         setShowFinishConfirm(true)
         return
       }
