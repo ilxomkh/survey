@@ -525,6 +525,19 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   answersRef.current = answers
   visibleQuestionsRef.current = visibleQuestions
 
+  // [DEBUG] check Современный visibility
+  if (questionsResolved.length > 0) {
+    const modernQs = questionsResolved.filter((q) => q.title.toLowerCase().includes("современн"))
+    if (modernQs.length > 0) {
+      console.log("[DEBUG] Современный visibility check:", modernQs.map((q) => ({
+        id: q.id, title: q.title.slice(0, 30),
+        inHidden: logicResult.hiddenGroupUuids.has(q.id),
+        inVisible: visibleQuestions.some((v) => v.id === q.id),
+      })))
+      console.log("[DEBUG] hiddenGroupUuids size:", logicResult.hiddenGroupUuids.size)
+    }
+  }
+
   // ─── Парсинг блоков Tally ───────────────────────────────────
   const extractTextFromSchema = (schema: any): string => {
     if (!schema) return ""
