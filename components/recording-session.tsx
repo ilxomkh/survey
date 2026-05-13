@@ -525,14 +525,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   answersRef.current = answers
   visibleQuestionsRef.current = visibleQuestions
 
-  // [DEBUG] check Современный visibility - log as flat string
-  if (questionsResolved.length > 0) {
-    const modernQs = questionsResolved.filter((q) => q.title.toLowerCase().includes("современн"))
-    if (modernQs.length > 0) {
-      const modernInfo = modernQs.map((q) =>
-        `id=${q.id.slice(0,8)} hidden=${logicResult.hiddenGroupUuids.has(q.id)} visible=${visibleQuestions.some((v) => v.id === q.id)}`
-      ).join(" | ")
-      console.log("[DEBUG] Современный:", modernInfo, "| hiddenSize:", logicResult.hiddenGroupUuids.size)
+  // [DEBUG] positions of Современный in visibleQuestions
+  if (questionsResolved.length > 0 && visibleQuestions.length > 0) {
+    const modernPositions = visibleQuestions
+      .map((q, i) => q.title.toLowerCase().includes("современн") ? `${i}:${q.id.slice(0,8)}` : null)
+      .filter(Boolean)
+    if (modernPositions.length > 0) {
+      console.log(`[DEBUG] Современный at visibleQ positions: [${modernPositions.join(", ")}] / total visible=${visibleQuestions.length}`)
     }
   }
 
