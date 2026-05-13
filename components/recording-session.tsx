@@ -1346,12 +1346,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           return true
         })
         const targetIdx = findFirstQuestionAfterPageBreak(newResult.jumpToPageUuid, rawBlocks, newVisible)
-        if (targetIdx >= 0) {
+        if (targetIdx >= 0 && currentQuestionIndex < targetIdx) {
           setCurrentQuestionIndex(targetIdx)
-        } else {
+          return
+        } else if (targetIdx < 0) {
           setShowFinishConfirm(true)
+          return
         }
-        return
+        // already past the jump target — continue normally
       }
     }
 
@@ -1452,15 +1454,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const handleNext = () => {
     if (!canGoNext) return
 
-    if (logicResult.jumpToPageUuid) {
-      const targetIdx = findFirstQuestionAfterPageBreak(logicResult.jumpToPageUuid, rawBlocks, visibleQuestions)
-      if (targetIdx >= 0) {
-        setCurrentQuestionIndex(targetIdx)
-      } else {
-        setShowFinishConfirm(true)
-      }
-      return
-    }
 
     if (currentQuestionIndex < visibleQuestions.length - 1) {
       setCurrentQuestionIndex((prev) => prev + 1)
