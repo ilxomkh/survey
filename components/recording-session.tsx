@@ -943,12 +943,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           console.log("[DEBUG] INPUT_FIELD blocks:", rawBlocks.filter((b: any) => b.type === "INPUT_FIELD").map((b: any) => ({ uuid: b.uuid, groupUuid: b.groupUuid, type: b.type })))
           console.log("[DEBUG] All block types:", [...new Set(rawBlocks.map((b: any) => b.type))].join(", "))
 
-          // найти правила которые показывают "Современный" вопросы
-          const modernUuids = ["d228fe89-6e1a-48cb-94c3-22a2c14e72b1","d8bfbead-c5c0-4881-8f26-cea76904817b","1a346569-d4a7-4b77-a8a5-fd330d319eff","deb97124-ebd3-484e-83a4-dd812abb37ea"]
-          const modernRules = engine.rules.filter((r: any) =>
-            r.actions.some((a: any) => a.blocks?.some((b: string) => modernUuids.includes(b)))
+          // найти parsed ID вопросов "Современный"
+          const modernParsed = extractedQuestions.filter((q: any) =>
+            q.title.toLowerCase().includes("современн")
           )
-          console.log("[DEBUG] Rules showing 'Современный':", JSON.stringify(modernRules, null, 2))
+          console.log("[DEBUG] Parsed 'Современный' questions:", JSON.stringify(modernParsed.map((q: any) => ({ id: q.id, title: q.title, type: q.type }))))
+          // найти правила для этих ID
+          const modernParsedIds = modernParsed.map((q: any) => q.id)
+          const modernRules = engine.rules.filter((r: any) =>
+            r.actions.some((a: any) => a.blocks?.some((b: string) => modernParsedIds.includes(b)))
+          )
+          console.log("[DEBUG] Rules for parsed 'Современный' ids:", JSON.stringify(modernRules, null, 2))
 
           if (extractedQuestions.length === 0) {
             const blockTypes = rawBlocks.map((b: any) => `${b.type}/${b.groupType}`).join(", ")
