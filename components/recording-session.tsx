@@ -943,6 +943,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           console.log("[DEBUG] INPUT_FIELD blocks:", rawBlocks.filter((b: any) => b.type === "INPUT_FIELD").map((b: any) => ({ uuid: b.uuid, groupUuid: b.groupUuid, type: b.type })))
           console.log("[DEBUG] All block types:", [...new Set(rawBlocks.map((b: any) => b.type))].join(", "))
 
+          // найти блоки с "Современный" чтобы понять структуру
+          const modernBlocks = rawBlocks.filter((b: any) =>
+            JSON.stringify(b).toLowerCase().includes("современн")
+          )
+          console.log("[DEBUG] 'Современный' blocks:", JSON.stringify(modernBlocks, null, 2).slice(0, 2000))
+
           if (extractedQuestions.length === 0) {
             const blockTypes = rawBlocks.map((b: any) => `${b.type}/${b.groupType}`).join(", ")
             console.warn("[RecordingSession] 0 вопросов из", rawBlocks.length, "блоков. Типы:", blockTypes)
