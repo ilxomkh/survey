@@ -405,6 +405,23 @@ async function uploadAudioWithRetry(
   console.error("[Audio] Все попытки исчерпаны, чанк потерян")
 }
 
+function findFirstQuestionAfterPageBreak(
+  jumpToPageUuid: string,
+  blocks: any[],
+  visibleQs: { id: string }[]
+): number {
+  const pageBreakIdx = blocks.findIndex((b) => b.groupUuid === jumpToPageUuid)
+  if (pageBreakIdx < 0) return -1
+  const visibleIds = new Set(visibleQs.map((q) => q.id))
+  for (let i = pageBreakIdx + 1; i < blocks.length; i++) {
+    const gid = blocks[i].groupUuid
+    if (gid && visibleIds.has(gid)) {
+      return visibleQs.findIndex((q) => q.id === gid)
+    }
+  }
+  return -1
+}
+
 export function RecordingSession({ sessionId, survey, onComplete }: RecordingSessionProps) {
   const locale = getSurveyUiLocale(survey)
   const ui = RECORDING_UI[locale]
@@ -427,6 +444,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     hiddenGroupUuids: new Set(),
     jumpToPageUuid: null,
   })
+  const [rawBlocks, setRawBlocks] = useState<any[]>([])
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const uploadPromisesRef = useRef<Promise<any>[]>([])
@@ -928,6 +946,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         }
 
         setQuestions(extractedQuestions)
+        setRawBlocks(rawBlocks)
 
         if (rawBlocks.length > 0) {
           const engine = buildLogicEngine(rawBlocks)
@@ -1319,7 +1338,19 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       setLogicResult(newResult)
 
       if (newResult.jumpToPageUuid && !isOtherSelected) {
-        setShowFinishConfirm(true)
+        const newVisible = questionsResolved.filter((q) => {
+          if (newResult.hiddenGroupUuids.has(q.id)) return false
+          if (q.type === "multi_text" && q.subFields) {
+            if (q.subFields.every((f) => newResult.hiddenGroupUuids.has(f.id))) return false
+          }
+          return true
+        })
+        const targetIdx = findFirstQuestionAfterPageBreak(newResult.jumpToPageUuid, rawBlocks, newVisible)
+        if (targetIdx >= 0) {
+          setCurrentQuestionIndex(targetIdx)
+        } else {
+          setShowFinishConfirm(true)
+        }
         return
       }
     }
@@ -1422,7 +1453,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     if (!canGoNext) return
 
     if (logicResult.jumpToPageUuid) {
-      setShowFinishConfirm(true)
+      const targetIdx = findFirstQuestionAfterPageBreak(logicResult.jumpToPageUuid, rawBlocks, visibleQuestions)
+      if (targetIdx >= 0) {
+        setCurrentQuestionIndex(targetIdx)
+      } else {
+        setShowFinishConfirm(true)
+      }
       return
     }
 
