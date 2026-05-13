@@ -814,12 +814,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             ? inputTextBlock.groupUuid
             : undefined
 
+          const lockSet = new Set<string>(checkboxLockUuids ?? [])
+          if (otherOptionBlock) lockSet.add(otherOptionBlock.uuid)
+          const shuffledOptions = lockSet.size > 0
+            ? shuffleOptionsWithLocks(options, lockSet)
+            : shuffleOptionsKeepLast(options)
+
           return {
             id: groupId,
             title: questionText,
             rawSchema,
             type: "checkbox",
-            options,
+            options: shuffledOptions,
             multiple: true,
             required: titleBlock.payload?.isRequired === true,
             otherOptionUuid: otherOptionBlock?.uuid,
@@ -848,12 +854,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               (b.payload?.text || "").toLowerCase().includes("other")
           )
 
+          const mcLockSet = new Set<string>()
+          if (mcOtherOptionBlock) mcLockSet.add(mcOtherOptionBlock.uuid)
+          const mcShuffled = mcLockSet.size > 0
+            ? shuffleOptionsWithLocks(options, mcLockSet)
+            : shuffleOptionsKeepLast(options)
+
           return {
             id: groupId,
             title: questionText,
             rawSchema,
             type: "multiple_choice",
-            options,
+            options: mcShuffled,
             required: titleBlock.payload?.isRequired === true,
             otherOptionUuid: mcOtherOptionBlock?.uuid,
             otherInputGroupId: mcInputTextBlock?.groupUuid,
