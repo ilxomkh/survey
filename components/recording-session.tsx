@@ -1794,7 +1794,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                           </span>
                           {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
                         </label>
-                        {isOtherOption && isChecked && currentQuestion.otherInputGroupId && (
+                        {isOtherOption && isChecked && currentQuestion.otherInputGroupId && !prevOtherText && (
                           <input
                             type="text"
                             value={answers[currentQuestion.otherInputGroupId!] || ""}
