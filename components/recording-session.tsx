@@ -1520,6 +1520,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const handleNext = () => {
     if (!canGoNext) return
 
+    // If quota/screening rule fired, never advance — re-show finish dialog
+    if (logicResult.jumpToPageUuid) {
+      setShowFinishConfirm(true)
+      return
+    }
+
     // Skip inline follow-up (already answered on this screen)
     const step = inlineFollowUp ? 2 : 1
     if (currentQuestionIndex + step < visibleQuestions.length) {
