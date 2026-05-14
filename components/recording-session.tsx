@@ -1358,8 +1358,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         })
 
-      await apiClient.completeSession(sessionId, position.latitude, position.longitude, position.accuracy as number, surveyAnswersList, isComplete)
-      onComplete()
+      let lastErr: any = null
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await apiClient.completeSession(sessionId, position.latitude, position.longitude, position.accuracy as number, surveyAnswersList, isComplete)
+          onComplete()
+          return
+        } catch (err: any) {
+          lastErr = err
+          if (attempt < 2) await new Promise<void>((r) => setTimeout(r, 1500 * (attempt + 1)))
+        }
+      }
+      throw lastErr
     } catch (err: any) {
       setError(err?.message || ui.sessionFinishError)
       setLoading(false)

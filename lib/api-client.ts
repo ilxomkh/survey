@@ -148,7 +148,7 @@ class ApiClient {
       console.groupEnd()
       return data
     } catch (error) {
-      if (error instanceof TypeError && error.message === "Failed to fetch") {
+      if (error instanceof TypeError && (error.message === "Failed to fetch" || error.message === "Load failed")) {
         console.error("❌ Ошибка сети - не удается подключиться к серверу:", API_BASE_URL)
         console.error("Проверьте:")
         console.error("  - Запущен ли бекенд")
@@ -269,7 +269,7 @@ class ApiClient {
       // Если не JSON, возвращаем пустой объект
       return {} as any
     } catch (error) {
-      if (error instanceof TypeError && error.message === "Failed to fetch") {
+      if (error instanceof TypeError && (error.message === "Failed to fetch" || error.message === "Load failed")) {
         throw {
           message: `Не удается загрузить аудио. Проверьте соединение с сервером.`,
           status: 0,
