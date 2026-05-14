@@ -1579,11 +1579,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         ) : currentQuestion ? (
           <div className="space-y-4">
             {currentQuestion.contextHeading && (
-              <p className="text-sm font-semibold text-foreground leading-snug">
+              <p className="text-base font-semibold text-foreground leading-snug">
                 {renderCurlyBraceInnerRed(currentQuestion.contextHeading, "ctx-")}
               </p>
             )}
-            <h3 className="font-medium text-base leading-snug">
+            <h3 className="font-medium text-sm text-muted-foreground leading-snug">
               {currentQuestion.rawSchema
                 ? renderSchemaWithReplacements(currentQuestion.rawSchema, currentQuestion.id)
                 : renderCurlyBraceInnerRed(
