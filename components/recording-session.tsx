@@ -722,6 +722,21 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const parseTallyBlocks = (blocks: any[]): Question[] => {
     const skipTypes = new Set(["FORM_TITLE", "PAGE_BREAK", "HEADING_2", "CONDITIONAL_LOGIC", "HIDDEN_FIELDS"])
 
+    // Build section heading map: each block index → the active section heading at that point.
+    // PAGE_BREAK resets the heading; HEADING_2 and TITLE(groupType!="QUESTION") set it.
+    let _activeSectionHeading: string | undefined = undefined
+    const sectionHeadingAtIndex: (string | undefined)[] = blocks.map((b: any) => {
+      if (b.type === "PAGE_BREAK") {
+        _activeSectionHeading = undefined
+      } else if (b.type === "HEADING_2" || (b.type === "TITLE" && b.groupType !== "QUESTION")) {
+        const text = sanitizeTallyTextLeak(
+          (extractTextFromSchema(b.payload?.safeHTMLSchema) || b.payload?.title || b.text || "").trim()
+        )
+        if (text) _activeSectionHeading = text
+      }
+      return _activeSectionHeading
+    })
+
     const titleBlocks = blocks.filter(
       (b: any) => b.type === "TITLE" && b.groupType === "QUESTION"
     )
@@ -737,17 +752,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         const rawSchema = titleBlock.payload?.safeHTMLSchema || null
 
         const titleBlockIndex = blocks.indexOf(titleBlock)
-        const prevTitleBlockIndex =
-          questionIndex > 0 ? blocks.indexOf(titleBlocks[questionIndex - 1]) + 1 : 0
-        const headingBlock = blocks
-          .slice(prevTitleBlockIndex, titleBlockIndex)
-          .find((b: any) => b.type === "HEADING_2")
-        const contextHeading = headingBlock
-          ? (extractTextFromSchema(headingBlock.payload?.safeHTMLSchema) ||
-              headingBlock.payload?.title ||
-              headingBlock.text ||
-              "").trim() || undefined
-          : undefined
+        const contextHeading = sectionHeadingAtIndex[titleBlockIndex]
 
         const nextTitleBlockIndex =
           questionIndex < titleBlocks.length - 1
