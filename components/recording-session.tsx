@@ -1920,6 +1920,27 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               </div>
             )}
 
+            {visibleQuestions.length > 1 && (
+              <div className="flex gap-2 pt-2 border-t">
+                <Button
+                  variant="outline"
+                  onClick={handlePrevious}
+                  disabled={currentQuestionIndex === 0}
+                  className="flex-1 h-10 text-sm"
+                >
+                  {ui.back}
+                </Button>
+                {!isLastVisible && (
+                  <Button
+                    onClick={handleNext}
+                    disabled={!canGoNext}
+                    className="flex-1 h-10 text-sm"
+                  >
+                    {ui.next}
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         ) : null}
       </div>
@@ -1938,28 +1959,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           </div>
           <span className="font-mono font-bold text-primary text-sm">{formatTime(duration)}</span>
         </div>
-
-        {visibleQuestions.length > 1 && (
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={handlePrevious}
-              disabled={currentQuestionIndex === 0}
-              className="flex-1 h-10 text-sm"
-            >
-              {ui.back}
-            </Button>
-            {!isLastVisible && (
-              <Button
-                onClick={handleNext}
-                disabled={!canGoNext}
-                className="flex-1 h-10 text-sm"
-              >
-                {ui.next}
-              </Button>
-            )}
-          </div>
-        )}
 
         {showFinishConfirm ? (
           <div className="flex gap-2">
