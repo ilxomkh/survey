@@ -1521,7 +1521,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }
 
   const handlePrevious = () => {
-    if (currentQuestionIndex > 0) setCurrentQuestionIndex((prev) => prev - 1)
+    if (currentQuestionIndex > 0) {
+      setShowFinishConfirm(false)
+      setCurrentQuestionIndex((prev) => prev - 1)
+    }
   }
 
   if (loading) {
