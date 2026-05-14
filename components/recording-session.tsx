@@ -1434,30 +1434,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   const handleCheckboxAnswer = (questionId: string, optionUuid: string) => {
     const current: string[] = Array.isArray(answers[questionId]) ? answers[questionId] : []
-    const isAdding = !current.includes(optionUuid)
-    const updated = isAdding
-      ? [...current, optionUuid]
-      : current.filter((o) => o !== optionUuid)
-
-    let newAnswers = { ...answers, [questionId]: updated }
-
-    // When checking "Другой", auto-copy text from nearest previous checkbox that has Другой text
-    if (isAdding && currentQuestion?.otherOptionUuid === optionUuid && currentQuestion?.otherInputGroupId) {
-      const currentOtherText = answers[currentQuestion.otherInputGroupId]
-      if (!currentOtherText || String(currentOtherText).trim() === "") {
-        const curIdx = questionsResolved.findIndex(q => q.id === questionId)
-        for (let i = curIdx - 1; i >= 0; i--) {
-          const prev = questionsResolved[i]
-          if (!prev || prev.type !== "checkbox" || !prev.otherInputGroupId) continue
-          const prevText = answers[prev.otherInputGroupId]
-          if (prevText && String(prevText).trim()) {
-            newAnswers = { ...newAnswers, [currentQuestion.otherInputGroupId]: String(prevText) }
-            break
-          }
-        }
-      }
-    }
-
+    const updated = current.includes(optionUuid)
+      ? current.filter((o) => o !== optionUuid)
+      : [...current, optionUuid]
+    const newAnswers = { ...answers, [questionId]: updated }
     setAnswers(newAnswers)
 
     if (logicEngine) {
@@ -1479,6 +1459,27 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const nextVisibleQ = visibleQuestions[currentQuestionIndex + 1]
   const inlineFollowUp =
     scaleAnswered && nextVisibleQ?.type === "text" ? nextVisibleQ : null
+
+  // Auto-copy "Другой" text from previous checkbox when navigating to a new one
+  useEffect(() => {
+    if (!currentQuestion || currentQuestion.type !== "checkbox") return
+    if (!currentQuestion.otherOptionUuid || !currentQuestion.otherInputGroupId) return
+    const a = answersRef.current
+    const selected: string[] = Array.isArray(a[currentQuestion.id]) ? a[currentQuestion.id] : []
+    if (!selected.includes(currentQuestion.otherOptionUuid)) return
+    const currentText = a[currentQuestion.otherInputGroupId]
+    if (currentText && String(currentText).trim()) return
+    const curIdx = questionsResolved.findIndex(q => q.id === currentQuestion.id)
+    for (let i = curIdx - 1; i >= 0; i--) {
+      const prev = questionsResolved[i]
+      if (!prev || prev.type !== "checkbox" || !prev.otherInputGroupId) continue
+      const prevText = a[prev.otherInputGroupId]
+      if (prevText && String(prevText).trim()) {
+        setAnswers(p => ({ ...p, [currentQuestion.otherInputGroupId!]: String(prevText) }))
+        break
+      }
+    }
+  }, [currentQuestion?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const canGoNext = (() => {
     if (!currentQuestion) return true
