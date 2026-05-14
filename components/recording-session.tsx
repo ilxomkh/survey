@@ -472,17 +472,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     const limitedQuestions = questions.map((question, index) =>
       limitP2PTransferOptions(question, questions[index - 1], answers)
     )
-    let q2 = resolveMarketplaceQ2(limitedQuestions)
-    let q3Index = resolveFrequencyQ3Index(limitedQuestions, q2)
-
-    // Fallback: if Q2 not found by title but Q3 found, use last checkbox with "Другой" before Q3
-    if (!q2 && q3Index !== -1) {
-      const candidates = limitedQuestions
-        .slice(0, q3Index)
-        .filter(q => q.type === "checkbox" && q.otherOptionUuid && q.otherInputGroupId && (q.options?.length ?? 0) >= 3)
-      q2 = candidates[candidates.length - 1]
-    }
-
+    const q2 = resolveMarketplaceQ2(limitedQuestions)
+    const q3Index = resolveFrequencyQ3Index(limitedQuestions, q2)
     if (!q2 || q3Index === -1) return limitedQuestions
 
     const selected = answers[q2.id]
@@ -1459,27 +1450,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const nextVisibleQ = visibleQuestions[currentQuestionIndex + 1]
   const inlineFollowUp =
     scaleAnswered && nextVisibleQ?.type === "text" ? nextVisibleQ : null
-
-  // Auto-copy "Другой" text from previous checkbox when navigating to a new one
-  useEffect(() => {
-    if (!currentQuestion || currentQuestion.type !== "checkbox") return
-    if (!currentQuestion.otherOptionUuid || !currentQuestion.otherInputGroupId) return
-    const a = answersRef.current
-    const selected: string[] = Array.isArray(a[currentQuestion.id]) ? a[currentQuestion.id] : []
-    if (!selected.includes(currentQuestion.otherOptionUuid)) return
-    const currentText = a[currentQuestion.otherInputGroupId]
-    if (currentText && String(currentText).trim()) return
-    const curIdx = questionsResolved.findIndex(q => q.id === currentQuestion.id)
-    for (let i = curIdx - 1; i >= 0; i--) {
-      const prev = questionsResolved[i]
-      if (!prev || prev.type !== "checkbox" || !prev.otherInputGroupId) continue
-      const prevText = a[prev.otherInputGroupId]
-      if (prevText && String(prevText).trim()) {
-        setAnswers(p => ({ ...p, [currentQuestion.otherInputGroupId!]: String(prevText) }))
-        break
-      }
-    }
-  }, [currentQuestion?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const canGoNext = (() => {
     if (!currentQuestion) return true
