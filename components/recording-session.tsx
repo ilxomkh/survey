@@ -1440,6 +1440,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const currentQuestion = visibleQuestions[currentQuestionIndex]
   const isLastVisible = currentQuestionIndex === visibleQuestions.length - 1
 
+  // Inline follow-up: linear_scale answered → show the next visible text question
+  // on the same screen (matches Tally's same-page behaviour for NPS follow-ups)
+  const scaleAnswered =
+    currentQuestion?.type === "linear_scale" &&
+    answers[currentQuestion.id] !== undefined &&
+    answers[currentQuestion.id] !== null &&
+    answers[currentQuestion.id] !== ""
+  const nextVisibleQ = visibleQuestions[currentQuestionIndex + 1]
+  const inlineFollowUp =
+    scaleAnswered && nextVisibleQ?.type === "text" ? nextVisibleQ : null
+
   const canGoNext = (() => {
     if (!currentQuestion) return true
 
@@ -1474,6 +1485,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
     if (!answered) return false
 
+    // If there's an inline follow-up, require it to be filled too
+    if (inlineFollowUp) {
+      const fv = answers[inlineFollowUp.id]
+      if (!fv || (typeof fv === "string" && fv.trim().length === 0)) return false
+    }
+
     if (currentQuestion.otherOptionUuid && currentQuestion.otherInputGroupId) {
       const isOtherSelected =
         currentQuestion.type === "multiple_choice"
@@ -1493,9 +1510,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const handleNext = () => {
     if (!canGoNext) return
 
-
-    if (currentQuestionIndex < visibleQuestions.length - 1) {
-      setCurrentQuestionIndex((prev) => prev + 1)
+    // Skip inline follow-up (already answered on this screen)
+    const step = inlineFollowUp ? 2 : 1
+    if (currentQuestionIndex + step < visibleQuestions.length) {
+      setCurrentQuestionIndex((prev) => prev + step)
+    } else if (inlineFollowUp) {
+      // inline follow-up was the last question → finish
+      setShowFinishConfirm(true)
     }
   }
 
@@ -1780,6 +1801,27 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                   <span>{ui.scaleMinLabel}</span>
                   <span>{ui.scaleMaxLabel}</span>
                 </div>
+              </div>
+            )}
+
+            {inlineFollowUp && (
+              <div className="mt-4 space-y-2">
+                <p className="text-sm font-medium text-foreground leading-snug">
+                  {inlineFollowUp.title}
+                </p>
+                <textarea
+                  value={String(answers[inlineFollowUp.id] ?? "")}
+                  onChange={(e) => handleAnswer(inlineFollowUp.id, e.target.value)}
+                  onFocus={(e) => {
+                    setKeyboardOpen(true)
+                    const el = e.currentTarget
+                    setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 350)
+                  }}
+                  onBlur={() => setTimeout(() => setKeyboardOpen(false), 150)}
+                  rows={3}
+                  placeholder={ui.placeholderText}
+                  className="w-full p-3 text-sm border-2 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                />
               </div>
             )}
 
