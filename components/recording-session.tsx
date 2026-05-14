@@ -769,7 +769,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             type: "linear_scale",
             scaleMin: scaleBlock?.payload?.startValue ?? scaleBlock?.payload?.start ?? 0,
             scaleMax: scaleBlock?.payload?.endValue ?? scaleBlock?.payload?.end ?? 10,
-            required: titleBlock.payload?.isRequired === true,
+            required: scaleBlock?.payload?.isRequired === true || titleBlock.payload?.isRequired === true,
           }
         }
 
