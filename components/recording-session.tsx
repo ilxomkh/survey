@@ -1748,62 +1748,72 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               </Select>
             )}
 
-            {currentQuestion.type === "checkbox" && currentQuestion.options && (
-              <div className="space-y-2">
-                {(marketplaceQ2OptionOrder?.questionId === currentQuestion.id
-                  ? marketplaceQ2OptionOrder.uuids
-                    .map((uuid: string) =>
-                      currentQuestion.options!.find((o: QuestionOption) => o.uuid === uuid)
+            {currentQuestion.type === "checkbox" && currentQuestion.options && (() => {
+              const opts = currentQuestion.options!
+              const prevOtherText = (() => {
+                if (!currentQuestion.otherOptionUuid) return null
+                const curIdx = questionsResolved.findIndex(q => q.id === currentQuestion.id)
+                for (let i = curIdx - 1; i >= 0; i--) {
+                  const prev = questionsResolved[i]
+                  if (!prev || prev.type !== "checkbox" || !prev.otherInputGroupId) continue
+                  const text = answers[prev.otherInputGroupId as string]
+                  if (text && String(text).trim()) return String(text)
+                }
+                return null
+              })()
+              const visibleOptions = (marketplaceQ2OptionOrder?.questionId === currentQuestion.id
+                ? marketplaceQ2OptionOrder.uuids
+                  .map((uuid: string) => opts.find((o: QuestionOption) => o.uuid === uuid))
+                  .filter((o): o is QuestionOption => !!o && !logicResult.hiddenGroupUuids.has(o.uuid))
+                : opts.filter((option: QuestionOption) => !logicResult.hiddenGroupUuids.has(option.uuid))
+              )
+              return (
+                <div className="space-y-2">
+                  {visibleOptions.map((option: QuestionOption) => {
+                    const selected: string[] = Array.isArray(answers[currentQuestion.id])
+                      ? answers[currentQuestion.id]
+                      : []
+                    const isChecked = selected.includes(option.uuid)
+                    const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
+                    return (
+                      <div key={option.uuid}>
+                        <label
+                          className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
+                          style={{ borderColor: isChecked ? "hsl(var(--primary))" : undefined }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleCheckboxAnswer(currentQuestion.id, option.uuid)}
+                            className="w-4 h-4 text-primary flex-shrink-0"
+                          />
+                          <span className="flex-1 text-sm break-words">
+                            {isOtherOption && prevOtherText
+                              ? prevOtherText
+                              : renderCurlyBraceInnerRed(option.text, `cb-${option.uuid}-`)}
+                          </span>
+                          {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
+                        </label>
+                        {isOtherOption && isChecked && currentQuestion.otherInputGroupId && (
+                          <input
+                            type="text"
+                            value={answers[currentQuestion.otherInputGroupId!] || ""}
+                            onChange={(e: any) =>
+                              setAnswers((prev: Answers) => ({
+                                ...prev,
+                                [currentQuestion.otherInputGroupId!]: e.target.value,
+                              }))
+                            }
+                            placeholder={ui.placeholderOther}
+                            className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
+                        )}
+                      </div>
                     )
-                    .filter(
-                      (o): o is QuestionOption =>
-                        !!o && !logicResult.hiddenGroupUuids.has(o.uuid)
-                    )
-                  : currentQuestion.options.filter(
-                    (option: QuestionOption) => !logicResult.hiddenGroupUuids.has(option.uuid)
-                  )
-                ).map((option: QuestionOption) => {
-                  const selected: string[] = Array.isArray(answers[currentQuestion.id])
-                    ? answers[currentQuestion.id]
-                    : []
-                  const isChecked = selected.includes(option.uuid)
-                  const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
-                  return (
-                    <div key={option.uuid}>
-                      <label
-                        className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
-                        style={{ borderColor: isChecked ? "hsl(var(--primary))" : undefined }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => handleCheckboxAnswer(currentQuestion.id, option.uuid)}
-                          className="w-4 h-4 text-primary flex-shrink-0"
-                        />
-                        <span className="flex-1 text-sm break-words">
-                          {renderCurlyBraceInnerRed(option.text, `cb-${option.uuid}-`)}
-                        </span>
-                        {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
-                      </label>
-                      {isOtherOption && isChecked && currentQuestion.otherInputGroupId && (
-                        <input
-                          type="text"
-                          value={answers[currentQuestion.otherInputGroupId!] || ""}
-                          onChange={(e: any) =>
-                            setAnswers((prev: Answers) => ({
-                              ...prev,
-                              [currentQuestion.otherInputGroupId!]: e.target.value,
-                            }))
-                          }
-                          placeholder={ui.placeholderOther}
-                          className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+                  })}
+                </div>
+              )
+            })()}
 
             {currentQuestion.type === "linear_scale" && (
               <div className="space-y-3">
