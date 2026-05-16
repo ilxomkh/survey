@@ -1809,10 +1809,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     {
                       length:
                         (currentQuestion.scaleMax ?? 10) -
-                        (currentQuestion.scaleMin ?? 0) +
+                        (currentQuestion.scaleMin ?? 1) +
                         1,
                     },
-                    (_, i) => (currentQuestion.scaleMin ?? 0) + i
+                    (_, i) => (currentQuestion.scaleMin ?? 1) + i
                   ).map((val) => (
                     <button
                       key={val}
