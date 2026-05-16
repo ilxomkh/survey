@@ -133,15 +133,8 @@ function getAtMentionReplacement(
 }
 
 function applyAtMentionPlain(text: string, mention: string | null | undefined): string {
-  const value = String(mention ?? "").trim()
-  if (!value || !text.includes("@")) return text
-
-  return String(text)
-    // Tally mention examples:
-    // @B3. Ularning qaysi biridan ...
-    // @B3. Каким приложением Вы пользуетесь ЧАЩЕ ВСЕГО?
-    .replace(/@B3\.[^?。！？!\n\r)]*[?。！？!]?/gi, value)
-    .replace(/@B3\b\.?/gi, value)
+  if (mention == null || String(mention).trim() === "" || !text.includes("@")) return text
+  return text.replace(/@[^@]*/g, String(mention).trim())
 }
 
 interface RecordingSessionProps {
@@ -230,37 +223,23 @@ const Q2_MARKETPLACE_TITLE_FRAGMENTS = [
 
 /** Заголовок Q3 («чаще всего»): русский + узбекские формулировки */
 const Q3_FREQUENCY_TITLE_FRAGMENTS = [
-  "b3.",
   "чаще всего",
   "eng ko'p",
-  "eng ko'p foydalanasiz",
-  "qaysi biridan eng ko'p",
-  "ularning qaysi biridan",
+  "eng ko`p",
   "ko'proq",
+  "ko`proq",
   "koproq",
 ] as const
 
-function normalizeSurveyText(text: string): string {
-  return String(text ?? "")
-    .toLowerCase()
-    .replace(/[’‘`´ʻʼ]/g, "'")
-    .replace(/ё/g, "е")
-    .replace(/\s*\/\s*/g, "/")
-    .replace(/\s+/g, " ")
-    .trim()
-}
-
 function titleMatchesAnyFragment(title: string, fragments: readonly string[]): boolean {
-  const t = normalizeSurveyText(title)
-  return fragments.some((f) => t.includes(normalizeSurveyText(f)))
+  const t = title.toLowerCase()
+  return fragments.some((f) => t.includes(f.toLowerCase()))
 }
 
 const P2P_TRANSFER_TITLE_FRAGMENTS = [
-  "p2p",
-  "kartadan kartaga",
-  "pul o'tkazish",
-  "перевести деньги с карты на карту",
-  "перевести деньги другу",
+  "Перевести деньги другу/родственнику",
+  "Перевести деньги другу",
+  "P2P",
 ] as const
 
 const P2P_TRANSFER_EXTRA_OPTIONS = [
@@ -269,12 +248,15 @@ const P2P_TRANSFER_EXTRA_OPTIONS = [
 ] as const
 
 function normalizeSurveyOptionText(text: string): string {
-  return normalizeSurveyText(text)
+  return text.toLowerCase().replace(/\s*\/\s*/g, "/").replace(/\s+/g, " ").trim()
 }
 
 function isP2PTransferQuestion(question: Question): boolean {
   if (question.type !== "checkbox") return false
-  return titleMatchesAnyFragment(question.title, P2P_TRANSFER_TITLE_FRAGMENTS)
+  const title = normalizeSurveyOptionText(question.title)
+  return P2P_TRANSFER_TITLE_FRAGMENTS.every((fragment) =>
+    title.includes(normalizeSurveyOptionText(fragment))
+  )
 }
 
 function findOptionByNormalizedText(options: QuestionOption[] | undefined, text: string): QuestionOption | undefined {
@@ -424,7 +406,6 @@ async function uploadAudioWithRetry(
     }
   }
   console.error("[Audio] Все попытки исчерпаны, чанк потерян")
-  throw new Error("[Audio] Все попытки исчерпаны, чанк не загружен")
 }
 
 
@@ -1425,16 +1406,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         return true
       })
       const curIdx = newVisible.findIndex((q) => q.id === questionId)
-      const nextQ = curIdx >= 0 ? newVisible[curIdx + 1] : undefined
-
-      const hasInlineTextFollowUp =
-        currentQuestion?.type === "linear_scale" && nextQ?.type === "text"
-
       const isLastInNew = curIdx >= 0 && curIdx === newVisible.length - 1
-
-      if (hasInlineTextFollowUp) {
-        setShowFinishConfirm(false)
-      } else if (isLastInNew) {
+      if (isLastInNew) {
         setShowFinishConfirm(true)
       }
     }
@@ -1496,19 +1469,6 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
   const nextVisibleQ = curIdxForFollowUp >= 0 ? visibleForFollowUp[curIdxForFollowUp + 1] : undefined
   const inlineFollowUp =
     scaleAnswered && nextVisibleQ?.type === "text" ? nextVisibleQ : null
-
-  useEffect(() => {
-    if (!showFinishConfirm) return
-    if (!currentQuestion || !inlineFollowUp) return
-
-    const followUpValue = answers[inlineFollowUp.id]
-    const followUpFilled =
-      typeof followUpValue === "string" && followUpValue.trim().length > 0
-
-    if (!followUpFilled) {
-      setShowFinishConfirm(false)
-    }
-  }, [showFinishConfirm, currentQuestion?.id, inlineFollowUp?.id, answers])
 
   const canGoNext = (() => {
     if (!currentQuestion) return true
@@ -1609,8 +1569,6 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
     )
   }
 
-  const isForcedFinish = Boolean(logicResult.jumpToPageUuid)
-
   if (error && !streamRef.current) {
     return (
       <div className="fixed inset-0 bg-background flex flex-col items-center justify-center z-50 p-6 text-center">
@@ -1676,18 +1634,7 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
           <div className="space-y-4">
             {currentQuestion.contextHeading && (
               <p className="text-base font-semibold text-foreground leading-snug">
-                {renderCurlyBraceInnerRed(
-                  applyAtMentionPlain(
-                    currentQuestion.contextHeading,
-                    getAtMentionReplacement(
-                      questions,
-                      visibleQuestions,
-                      answers,
-                      currentQuestion
-                    )
-                  ),
-                  "ctx-"
-                )}
+                {renderCurlyBraceInnerRed(currentQuestion.contextHeading, "ctx-")}
               </p>
             )}
             <h3 className="font-medium text-sm text-muted-foreground leading-snug">
@@ -1799,6 +1746,17 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
 
             {currentQuestion.type === "checkbox" && currentQuestion.options && (() => {
               const opts = currentQuestion.options!
+              const prevOtherText = (() => {
+                if (!currentQuestion.otherOptionUuid) return null
+                const curIdx = questionsResolved.findIndex(q => q.id === currentQuestion.id)
+                for (let i = curIdx - 1; i >= 0; i--) {
+                  const prev = questionsResolved[i]
+                  if (!prev || prev.type !== "checkbox" || !prev.otherInputGroupId) continue
+                  const text = answers[prev.otherInputGroupId as string]
+                  if (text && String(text).trim()) return String(text)
+                }
+                return null
+              })()
               const visibleOptions = (marketplaceQ2OptionOrder?.questionId === currentQuestion.id
                 ? marketplaceQ2OptionOrder.uuids
                   .map((uuid: string) => opts.find((o: QuestionOption) => o.uuid === uuid))
@@ -1826,11 +1784,13 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                             className="w-4 h-4 text-primary flex-shrink-0"
                           />
                           <span className="flex-1 text-sm break-words">
-                            {renderCurlyBraceInnerRed(option.text, `cb-${option.uuid}-`)}
+                            {isOtherOption && prevOtherText
+                              ? prevOtherText
+                              : renderCurlyBraceInnerRed(option.text, `cb-${option.uuid}-`)}
                           </span>
                           {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
                         </label>
-                        {isOtherOption && isChecked && currentQuestion.otherInputGroupId && (
+                        {isOtherOption && isChecked && currentQuestion.otherInputGroupId && !prevOtherText && (
                           <input
                             type="text"
                             value={answers[currentQuestion.otherInputGroupId!] || ""}
@@ -2037,20 +1997,17 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
 
         {showFinishConfirm ? (
           <div className="flex gap-2">
-            {!isForcedFinish && (
-              <Button
-                variant="outline"
-                onClick={() => setShowFinishConfirm(false)}
-                className="flex-1 h-11 text-sm"
-              >
-                {ui.finishConfirmNo}
-              </Button>
-            )}
-
+            <Button
+              variant="outline"
+              onClick={() => setShowFinishConfirm(false)}
+              className="flex-1 h-11 text-sm"
+            >
+              {ui.finishConfirmNo}
+            </Button>
             <Button
               onClick={finishRecording}
               disabled={loading}
-              className={`${isForcedFinish ? "w-full" : "flex-1"} h-11 bg-destructive hover:bg-destructive/90 text-white text-sm`}
+              className="flex-1 h-11 bg-destructive hover:bg-destructive/90 text-white text-sm"
             >
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -2081,11 +2038,7 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
 
         {showFinishConfirm && (
           <p className="text-xs text-center text-muted-foreground">
-            {isForcedFinish
-              ? locale === "uz"
-                ? "Respondent so‘rov shartlariga mos kelmaydi."
-                : "Респондент не подходит по условиям опроса."
-              : ui.finishConfirmQuestion}
+            {ui.finishConfirmQuestion}
           </p>
         )}
       </div>
