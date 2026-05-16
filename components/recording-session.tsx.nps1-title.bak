@@ -734,41 +734,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const parseTallyBlocks = (blocks: any[]): Question[] => {
     const skipTypes = new Set(["FORM_TITLE", "PAGE_BREAK", "HEADING_2", "CONDITIONAL_LOGIC", "HIDDEN_FIELDS"])
 
-    // Tally sometimes stores only a short visual TITLE like "NPS1.",
-    // while the full question text is duplicated inside CONDITIONAL_LOGIC field.title.
-    // Example: NPS1. (если 0-6) Что вам не понравилось? ...
-    const fieldTitleByGroupUuid = new Map<string, string>()
-    for (const block of blocks) {
-      const conditionals = block?.payload?.conditionals
-      if (!Array.isArray(conditionals)) continue
-
-      for (const conditional of conditionals) {
-        const field = conditional?.payload?.field
-        const key = field?.blockGroupUuid || field?.uuid
-        const title = typeof field?.title === "string" ? sanitizeTallyTextLeak(field.title.trim()) : ""
-        if (key && title && !fieldTitleByGroupUuid.has(key)) {
-          fieldTitleByGroupUuid.set(key, title)
-        }
-      }
-    }
-
-    const isWeakParsedQuestionTitle = (text: string): boolean => {
-      const t = normalizeSurveyText(sanitizeTallyTextLeak(text))
-      return (
-        t === "nps1" ||
-        t === "nps1." ||
-        /^nps\d+\.?$/.test(t) ||
-        t.length <= 6
-      )
-    }
-
-    const getBestParsedQuestionTitle = (fallbackTitle: string, groupId: string | undefined): string => {
-      if (!groupId) return fallbackTitle
-      const fromLogic = fieldTitleByGroupUuid.get(groupId)
-      if (fromLogic && isWeakParsedQuestionTitle(fallbackTitle)) return fromLogic
-      return fallbackTitle
-    }
-
     // Build section heading map: each block index → the active section heading at that point.
     // PAGE_BREAK resets the heading; HEADING_2 and TITLE(groupType!="QUESTION") set it.
     let _activeSectionHeading: string | undefined = undefined
@@ -986,15 +951,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         const textBlock = allTextBlocks[0] ?? null
         const groupId = textBlock?.groupUuid || titleBlock.groupUuid
-        const bestQuestionText = getBestParsedQuestionTitle(questionText, groupId)
-        const bestRawSchema = bestQuestionText !== questionText ? null : rawSchema
-
         return {
           id: groupId,
-          title: bestQuestionText,
-          rawSchema: bestRawSchema,
+          title: questionText,
+          rawSchema,
           type: "text",
-          required: textBlock?.payload?.isRequired === true || titleBlock.payload?.isRequired === true,
+          required: titleBlock.payload?.isRequired === true,
         }
       })
       .filter((q) => q.title.trim().length > 0)
