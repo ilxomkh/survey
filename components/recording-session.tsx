@@ -765,7 +765,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             rawSchema,
             contextHeading,
             type: "linear_scale",
-            scaleMin: scaleBlock?.payload?.startValue ?? scaleBlock?.payload?.start ?? 0,
+            scaleMin: scaleBlock?.payload?.startValue ?? scaleBlock?.payload?.start ?? 1,
             scaleMax: scaleBlock?.payload?.endValue ?? scaleBlock?.payload?.end ?? 10,
             required: scaleBlock?.payload?.isRequired === true || titleBlock.payload?.isRequired === true,
           }
@@ -1450,14 +1450,23 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const currentQuestion = visibleQuestions[currentQuestionIndex]
   const isLastVisible = currentQuestionIndex === visibleQuestions.length - 1
 
-  // Inline follow-up: linear_scale answered → show the next visible text question
-  // on the same screen (matches Tally's same-page behaviour for NPS follow-ups)
-  const scaleAnswered =
-    currentQuestion?.type === "linear_scale" &&
-    answers[currentQuestion.id] !== undefined &&
-    answers[currentQuestion.id] !== null &&
-    answers[currentQuestion.id] !== ""
-  const nextVisibleQ = visibleQuestions[currentQuestionIndex + 1]
+const scaleAnswered =
+  currentQuestion?.type === "linear_scale" &&
+  answers[currentQuestion.id] !== undefined &&
+  answers[currentQuestion.id] !== null &&
+  answers[currentQuestion.id] !== ""
+
+  // Для inline follow-up фильтруем с актуальным logicResult (уже обновлён в handleAnswer)
+const visibleForFollowUp = questionsResolved.filter((q) => {
+    if (logicResult.hiddenGroupUuids.has(q.id)) return false
+    if (q.type === "multi_text" && q.subFields) {
+      if (q.subFields.every((f) => logicResult.hiddenGroupUuids.has(f.id))) return false
+    }
+    return true
+  })
+
+  const curIdxForFollowUp = visibleForFollowUp.findIndex(q => q.id === currentQuestion?.id)
+  const nextVisibleQ = curIdxForFollowUp >= 0 ? visibleForFollowUp[curIdxForFollowUp + 1] : undefined
   const inlineFollowUp =
     scaleAnswered && nextVisibleQ?.type === "text" ? nextVisibleQ : null
 
@@ -1809,10 +1818,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                     {
                       length:
                         (currentQuestion.scaleMax ?? 10) -
-                        (currentQuestion.scaleMin ?? 1) +
+                        (currentQuestion.scaleMin ?? 0) +
                         1,
                     },
-                    (_, i) => (currentQuestion.scaleMin ?? 1) + i
+                    (_, i) => (currentQuestion.scaleMin ?? 0) + i
                   ).map((val) => (
                     <button
                       key={val}
