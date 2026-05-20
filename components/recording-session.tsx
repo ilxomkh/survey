@@ -877,12 +877,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             : undefined
 
           const inputTextBlock = siblingBlocks.find((b: any) => { if (b.type !== "INPUT_TEXT") return false; const label = (b.payload?.text || b.text || "").toLowerCase(); return !label || label.includes("записать") || label.includes("respondent") || label.includes("yozing") || label.includes("boshqa"); })
-          const otherOptionBlock = optionBlocks.find(
-            (b: any) =>
-              (b.payload?.text || "").toLowerCase().includes("boshqa") ||
-              (b.payload?.text || "").toLowerCase().includes("другой") ||
-              (b.payload?.text || "").toLowerCase().includes("other")
-          )
+          const otherOptionBlock = optionBlocks.find((b: any) => {
+            const t = (b.payload?.text || "").toLowerCase().trim()
+            return t === "boshqa" || t === "другой" || t === "other" ||
+              t === "другой [записать]" || t === "boshqa [yozib oling]" ||
+              (/^(boshqa|другой|other)[\s\[\(]/.test(t) && t.length <= 30)
+          })
           const checkboxOtherInputGroupId = otherOptionBlock && inputTextBlock
             ? inputTextBlock.groupUuid
             : undefined
@@ -921,12 +921,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const groupId = choiceOptionBlocks[0]?.groupUuid || titleBlock.groupUuid
 
           const mcInputTextBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
-          const mcOtherOptionBlock = choiceOptionBlocks.find(
-            (b: any) =>
-              (b.payload?.text || "").toLowerCase().includes("boshqa") ||
-              (b.payload?.text || "").toLowerCase().includes("другой") ||
-              (b.payload?.text || "").toLowerCase().includes("other")
-          )
+          const mcOtherOptionBlock = choiceOptionBlocks.find((b: any) => {
+            const t = (b.payload?.text || "").toLowerCase().trim()
+            return t === "boshqa" || t === "другой" || t === "other" ||
+              t === "другой [записать]" || t === "boshqa [yozib oling]" ||
+              (/^(boshqa|другой|other)[\s\[\(]/.test(t) && t.length <= 30)
+          })
 
           const mcLockSet = new Set<string>()
           if (mcOtherOptionBlock) mcLockSet.add(mcOtherOptionBlock.uuid)
@@ -1500,22 +1500,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
     let newAnswers = { ...answers, [questionId]: updated }
 
-    // When checking "Другой", auto-copy text from nearest previous checkbox that has Другой text
-    if (isAdding && currentQuestion?.otherOptionUuid === optionUuid && currentQuestion?.otherInputGroupId) {
-      const currentOtherText = answers[currentQuestion.otherInputGroupId]
-      if (!currentOtherText || String(currentOtherText).trim() === "") {
-        const curIdx = questionsResolved.findIndex(q => q.id === questionId)
-        for (let i = curIdx - 1; i >= 0; i--) {
-          const prev = questionsResolved[i]
-          if (!prev || prev.type !== "checkbox" || !prev.otherInputGroupId) continue
-          const prevText = answers[prev.otherInputGroupId]
-          if (prevText && String(prevText).trim()) {
-            newAnswers = { ...newAnswers, [currentQuestion.otherInputGroupId]: String(prevText) }
-            break
-          }
-        }
-      }
-    }
+
 
     setAnswers(newAnswers)
 
