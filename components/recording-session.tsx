@@ -549,6 +549,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   // ─── Visible questions (yashirilmaganlar) ──────────────────
   const visibleQuestions = questionsResolved.filter((q) => {
     if (logicResult.hiddenGroupUuids.has(q.id)) return false
+    const titleLow = q.title.toLowerCase();
+    if (titleLow.includes("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.includes("respondent javobini")) return false;
     if (q.type === "multi_text" && q.subFields) {
       // скрываем если ВСЕ subField uuid скрыты
       if (q.subFields.every((f) => logicResult.hiddenGroupUuids.has(f.id))) return false
@@ -872,7 +874,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             ? lockRaw.filter((u: unknown) => typeof u === "string")
             : undefined
 
-          const inputTextBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
+          const inputTextBlock = siblingBlocks.find((b: any) => { if (b.type !== "INPUT_TEXT") return false; const label = (b.payload?.text || b.text || "").toLowerCase(); return !label || label.includes("записать") || label.includes("respondent") || label.includes("yozing") || label.includes("boshqa"); })
           const otherOptionBlock = optionBlocks.find(
             (b: any) =>
               (b.payload?.text || "").toLowerCase().includes("boshqa") ||
