@@ -547,8 +547,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   }, [questionsResolved])
 
   // ─── Visible questions (yashirilmaganlar) ──────────────────
+  const _otherInputIds = new Set(questionsResolved.filter(q => q.otherInputGroupId).map(q => q.otherInputGroupId!))
   const visibleQuestions = questionsResolved.filter((q) => {
     if (logicResult.hiddenGroupUuids.has(q.id)) return false
+    if (_otherInputIds.has(q.id)) return false
     const titleLow = q.title.toLowerCase();
     if (titleLow.includes("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.includes("respondent javobini")) return false;
     if (q.type === "multi_text" && q.subFields) {
