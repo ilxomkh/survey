@@ -554,7 +554,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     const titleLow = q.title.toLowerCase();
     if (titleLow.includes("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.includes("respondent javobini")) return false;
     if (q.type === "multi_text" && q.subFields) {
-      // скрываем если ВСЕ subField uuid скрыты
+      // q.id o'zi yashirilgan bo'lsa
+      if (logicResult.hiddenGroupUuids.has(q.id)) return false
+      // barcha subFieldlar yashirilgan bo'lsa
       if (q.subFields.every((f) => logicResult.hiddenGroupUuids.has(f.id))) return false
     }
     return true
@@ -1523,6 +1525,7 @@ const scaleAnswered =
 const visibleForFollowUp = questionsResolved.filter((q) => {
     if (logicResult.hiddenGroupUuids.has(q.id)) return false
     if (q.type === "multi_text" && q.subFields) {
+      if (logicResult.hiddenGroupUuids.has(q.id)) return false
       if (q.subFields.every((f) => logicResult.hiddenGroupUuids.has(f.id))) return false
     }
     return true
