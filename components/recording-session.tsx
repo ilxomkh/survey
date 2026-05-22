@@ -824,6 +824,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const groupId = scaleBlock?.groupUuid || titleBlock.groupUuid
           return {
             id: groupId,
+            titleGroupId: titleBlock.groupUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -839,6 +840,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const groupId = inputBlock?.groupUuid || titleBlock.groupUuid
           return {
             id: groupId,
+            titleGroupId: titleBlock.groupUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -858,6 +860,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const groupId = optionBlocks[0]?.groupUuid || titleBlock.groupUuid
           return {
             id: groupId,
+            titleGroupId: titleBlock.groupUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -900,6 +903,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
           return {
             id: groupId,
+            titleGroupId: titleBlock.groupUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -941,6 +945,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
           return {
             id: groupId,
+            titleGroupId: titleBlock.groupUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -955,6 +960,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         if (groupType === "YES_NO") {
           return {
             id: titleBlock.groupUuid,
+            titleGroupId: titleBlock.groupUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -1002,6 +1008,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         return {
           id: groupId,
+          titleGroupId: titleBlock.groupUuid,
           title: bestQuestionText,
           rawSchema: bestRawSchema,
           type: "text",
