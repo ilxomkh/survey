@@ -48,6 +48,8 @@ interface Question {
   checkboxLockUuids?: string[]
   /** Для multi_text: отдельные поля (каждый INPUT_FIELD — отдельный uuid) */
   subFields?: { id: string }[]
+  /** titleBlock.groupUuid — используется для скрытия через HIDE_BLOCKS */
+  titleGroupId?: string
 }
 
 /** Текст из поля «другой» Q2/Q3 (как в оригинальной логике @). */
@@ -550,6 +552,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const _otherInputIds = new Set(questionsResolved.filter(q => q.otherInputGroupId).map(q => q.otherInputGroupId!))
   const visibleQuestions = questionsResolved.filter((q) => {
     if (logicResult.hiddenGroupUuids.has(q.id)) return false
+    if (q.titleGroupId && logicResult.hiddenGroupUuids.has(q.titleGroupId)) return false
     if (_otherInputIds.has(q.id) && q.type === 'text') return false
     const titleLow = q.title.toLowerCase();
     if (titleLow.includes("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.includes("respondent javobini")) return false;
@@ -966,6 +969,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const subFields = inputFieldBlocks.map((b: any) => ({ id: b.uuid || b.groupUuid }))
           return {
             id: groupId,
+            titleGroupId: titleBlock.groupUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -981,6 +985,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const subFields = allTextBlocks.map((b: any) => ({ id: b.uuid || b.groupUuid }))
           return {
             id: groupId,
+            titleGroupId: titleBlock.groupUuid,
             title: questionText,
             rawSchema,
             contextHeading,
