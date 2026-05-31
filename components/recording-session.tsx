@@ -468,6 +468,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const lastPositionRef = useRef<GeolocationCoordinates | null>(null)
   const answersRef = useRef<Answers>({})
   const visibleQuestionsRef = useRef<Question[]>([])
+  const logicEngineRef = useRef<TallyLogicEngine | null>(null)
 
   // ─── Answers o'zgarganda logic qayta hisoblash ──────────────
   useEffect(() => {
@@ -1093,6 +1094,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         if (rawBlocks.length > 0) {
           const engine = buildLogicEngine(rawBlocks)
           setLogicEngine(engine)
+          logicEngineRef.current = engine
 
           if (extractedQuestions.length === 0) {
             const blockTypes = rawBlocks.map((b: any) => `${b.type}/${b.groupType}`).join(", ")
@@ -1392,7 +1394,23 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       }
 
       const snapshotAnswers = answersRef.current
-      const snapshotVisible = visibleQuestionsRef.current
+      let snapshotVisible = visibleQuestionsRef.current
+
+      // Re-evaluate logic with final answers — guards against stale visibleQuestionsRef
+      const finalEngine = logicEngineRef.current
+      if (finalEngine) {
+        const finalHidden = finalEngine.evaluate(snapshotAnswers).hiddenGroupUuids
+        snapshotVisible = snapshotVisible.filter((q) => {
+          if (finalHidden.has(q.id)) return false
+          if (q.titleGroupId && finalHidden.has(q.titleGroupId)) return false
+          if (q.pageBreakGroupId && finalHidden.has(q.pageBreakGroupId)) return false
+          if (q.pageBreakUuid && finalHidden.has(q.pageBreakUuid)) return false
+          if (q.type === "multi_text" && q.subFields) {
+            if (q.subFields.every((f) => finalHidden.has(f.id))) return false
+          }
+          return true
+        })
+      }
 
       const isComplete = snapshotVisible.every((q) => {
         if (q.type === "multi_text") {
