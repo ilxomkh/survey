@@ -470,6 +470,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const visibleQuestionsRef = useRef<Question[]>([])
   const logicEngineRef = useRef<TallyLogicEngine | null>(null)
 
+  // ─── Sync logicEngine state to ref so finishRecording always has latest ──
+  useEffect(() => {
+    logicEngineRef.current = logicEngine
+  }, [logicEngine])
+
   // ─── Answers o'zgarganda logic qayta hisoblash ──────────────
   useEffect(() => {
     if (!logicEngine) return
