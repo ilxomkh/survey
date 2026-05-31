@@ -185,6 +185,7 @@ export function buildLogicEngine(blocks: any[]): TallyLogicEngine {
 
   function evaluate(answers: Answers): LogicResult {
     const hiddenByRule = new Set<string>(defaultHiddenByShowBlocks)
+    const explicitlyHidden = new Set<string>()
     const shownByRule = new Set<string>()
     let jumpToPageUuid: string | null = null
 
@@ -195,15 +196,21 @@ export function buildLogicEngine(blocks: any[]): TallyLogicEngine {
         if (action.type === "JUMP_TO_PAGE" && action.jumpToPage) {
           if (!jumpToPageUuid) jumpToPageUuid = action.jumpToPage
         } else if (action.type === "HIDE_BLOCKS" && action.blocks) {
-          for (const uuid of action.blocks) hiddenByRule.add(uuid)
+          for (const uuid of action.blocks) {
+            hiddenByRule.add(uuid)
+            explicitlyHidden.add(uuid)
+          }
         } else if (action.type === "SHOW_BLOCKS" && action.blocks) {
           for (const uuid of action.blocks) shownByRule.add(uuid)
         }
       }
     }
 
-    // SHOW_BLOCKS overrides HIDE_BLOCKS (including the default-hidden set)
-    for (const uuid of shownByRule) hiddenByRule.delete(uuid)
+    // SHOW_BLOCKS overrides default-hidden-by-SHOW_BLOCKS,
+    // but explicit HIDE_BLOCKS rules take priority over SHOW_BLOCKS
+    for (const uuid of shownByRule) {
+      if (!explicitlyHidden.has(uuid)) hiddenByRule.delete(uuid)
+    }
 
     return { hiddenGroupUuids: hiddenByRule, jumpToPageUuid }
   }
