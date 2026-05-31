@@ -52,6 +52,8 @@ interface Question {
   titleGroupId?: string
   /** groupUuid PAGE_BREAK-а перед этим вопросом — скрытый PAGE_BREAK скрывает всю страницу */
   pageBreakGroupId?: string
+  /** uuid PAGE_BREAK-а перед этим вопросом (Tally иногда хранит uuid вместо groupUuid в hideBlocks) */
+  pageBreakUuid?: string
 }
 
 /** Текст из поля «другой» Q2/Q3 (как в оригинальной логике @). */
@@ -556,6 +558,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     if (logicResult.hiddenGroupUuids.has(q.id)) return false
     if (q.titleGroupId && logicResult.hiddenGroupUuids.has(q.titleGroupId)) return false
     if (q.pageBreakGroupId && logicResult.hiddenGroupUuids.has(q.pageBreakGroupId)) return false
+    if (q.pageBreakUuid && logicResult.hiddenGroupUuids.has(q.pageBreakUuid)) return false
     if (_otherInputIds.has(q.id) && q.type === 'text') return false
     const titleLow = q.title.toLowerCase();
     if (titleLow.includes("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.includes("respondent javobini")) return false;
@@ -813,11 +816,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         const titleBlockIndex = blocks.indexOf(titleBlock)
         const contextHeading = sectionHeadingAtIndex[titleBlockIndex]
 
-        // Найти ближайший PAGE_BREAK перед этим TITLE — его groupUuid используется для скрытия страницы
+        // Найти ближайший PAGE_BREAK перед этим TITLE — его uuid/groupUuid используется для скрытия страницы
         let pageBreakGroupId: string | undefined
+        let pageBreakUuid: string | undefined
         for (let pi = titleBlockIndex - 1; pi >= 0; pi--) {
           if (blocks[pi].type === "PAGE_BREAK") {
             pageBreakGroupId = blocks[pi].groupUuid
+            pageBreakUuid = blocks[pi].uuid
             break
           }
           if (blocks[pi].type === "TITLE") break
@@ -839,6 +844,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             titleGroupId: titleBlock.groupUuid,
             pageBreakGroupId,
+            pageBreakUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -856,6 +862,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             titleGroupId: titleBlock.groupUuid,
             pageBreakGroupId,
+            pageBreakUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -877,6 +884,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             titleGroupId: titleBlock.groupUuid,
             pageBreakGroupId,
+            pageBreakUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -921,6 +929,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             titleGroupId: titleBlock.groupUuid,
             pageBreakGroupId,
+            pageBreakUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -964,6 +973,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             titleGroupId: titleBlock.groupUuid,
             pageBreakGroupId,
+            pageBreakUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -980,6 +990,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: titleBlock.groupUuid,
             titleGroupId: titleBlock.groupUuid,
             pageBreakGroupId,
+            pageBreakUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -996,6 +1007,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             titleGroupId: titleBlock.groupUuid,
             pageBreakGroupId,
+            pageBreakUuid,
             title: questionText,
             rawSchema,
             contextHeading,
@@ -1013,6 +1025,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             id: groupId,
             titleGroupId: titleBlock.groupUuid,
             pageBreakGroupId,
+            pageBreakUuid,
             title: questionText,
             rawSchema,
             contextHeading,
