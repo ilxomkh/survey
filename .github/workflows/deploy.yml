@@ -20,6 +20,9 @@ jobs:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Write version info
+        run: echo "${{ github.sha }}" > public/version.txt
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
