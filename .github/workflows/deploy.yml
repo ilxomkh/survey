@@ -28,5 +28,4 @@ jobs:
           platforms: linux/amd64
           tags: ${{ secrets.DOCKER_USER }}/survey-frontend:latest
           build-args: BUILD_DATE=${{ github.run_id }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          no-cache: true
