@@ -939,10 +939,19 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             if (b.uuid === otherOptionBlock?.uuid) return false
             const t = (b.payload?.text || "").toLowerCase()
             return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(specify") || t.includes("(yozing")
+              || t.includes("укажите какую") || t.includes("укажите какой") || t.includes("укажите какие")
+              || t.includes("конкретную функцию") || t.includes("aniq bir funksiya")
+              || t.includes("konkret funksiya") || t.includes("qaysi funksiya")
           })
           const allInputTextBlocks2 = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
-          const specifyInputTextBlock = allInputTextBlocks2.find((b: any) => b.groupUuid !== inputTextBlock?.groupUuid)
-          const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock ? specifyInputTextBlock.groupUuid : undefined
+          // Find specify input by uuid (groupUuid can be shared with "other" block)
+          const specifyInputTextBlock = allInputTextBlocks2.find((b: any) => {
+            if (!inputTextBlock) return true
+            return b.uuid !== inputTextBlock.uuid
+          })
+          const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock
+            ? (specifyInputTextBlock.groupUuid || specifyInputTextBlock.uuid)
+            : undefined
 
           const lockSet = new Set<string>(checkboxLockUuids ?? [])
           if (otherOptionBlock) lockSet.add(otherOptionBlock.uuid)
@@ -1702,6 +1711,17 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
       if (isOtherSelected) {
         const otherText = answers[currentQuestion.otherInputGroupId]
         if (!otherText || String(otherText).trim() === "") return false
+      }
+    }
+
+    // Require specifyInputGroupId to be filled when specifyOptionUuid is selected
+    if (currentQuestion.specifyOptionUuid && currentQuestion.specifyInputGroupId) {
+      const isSpecifySelected =
+        Array.isArray(answers[currentQuestion.id]) &&
+        (answers[currentQuestion.id] as string[]).includes(currentQuestion.specifyOptionUuid)
+      if (isSpecifySelected) {
+        const specifyText = answers[currentQuestion.specifyInputGroupId]
+        if (!specifyText || String(specifyText).trim() === "") return false
       }
     }
 
