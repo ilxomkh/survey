@@ -945,12 +945,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           })
           const allInputTextBlocks2 = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
           // Find specify input by uuid (groupUuid can be shared with "other" block)
-          const specifyInputTextBlock = allInputTextBlocks2.find((b: any) => {
-            if (!inputTextBlock) return true
-            return b.uuid !== inputTextBlock.uuid
-          })
-          console.log("[specify] texts:", optionBlocks.map((b:any)=>b.payload?.text), "found:", specifyOptionBlock?.payload?.text, "inputs:", allInputTextBlocks2.map((b:any)=>({uuid:b.uuid,groupUuid:b.groupUuid})))
-          console.log("[DBG]", {specifyOptionBlock: specifyOptionBlock?.payload?.text, inputs: allInputTextBlocks2.map((b:any)=>({uuid:b.uuid,groupUuid:b.groupUuid,text:b.payload?.text})), inputTextBlock: inputTextBlock?.uuid})
+          // specify input = any INPUT_TEXT that is NOT the "other" input;
+          // if inputTextBlock is undefined (no "other"), take the first INPUT_TEXT;
+          // if two inputs exist and inputTextBlock is the first, take the second.
+          const specifyInputTextBlock = allInputTextBlocks2.length > 0
+            ? (allInputTextBlocks2.find((b: any) => b.uuid !== inputTextBlock?.uuid) ?? allInputTextBlocks2[0])
+            : undefined
           const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock
             ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
             : undefined
