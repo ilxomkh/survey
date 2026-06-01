@@ -931,7 +931,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               (/^(boshqa|другой|other)[\s\[\(]/.test(t) && t.length <= 30)
           })
           const checkboxOtherInputGroupId = otherOptionBlock && inputTextBlock
-            ? inputTextBlock.groupUuid
+            ? (inputTextBlock.uuid || inputTextBlock.groupUuid)
             : undefined
 
           // Detect secondary "specify" option: (укажите какую), (qaysi?), etc.
@@ -949,8 +949,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             if (!inputTextBlock) return true
             return b.uuid !== inputTextBlock.uuid
           })
+          console.log("[specify] texts:", optionBlocks.map((b:any)=>b.payload?.text), "found:", specifyOptionBlock?.payload?.text, "inputs:", allInputTextBlocks2.map((b:any)=>({uuid:b.uuid,groupUuid:b.groupUuid})))
           const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock
-            ? (specifyInputTextBlock.groupUuid || specifyInputTextBlock.uuid)
+            ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
             : undefined
 
           const lockSet = new Set<string>(checkboxLockUuids ?? [])
