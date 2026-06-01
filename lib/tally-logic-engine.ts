@@ -196,9 +196,9 @@ export function buildLogicEngine(blocks: any[]): TallyLogicEngine {
     const shownByRule = new Set<string>()
     let jumpToPageUuid: string | null = null
 
-    const debugB3Answer = answers["00ea5764-4727-4eca-9070-4ab4d1c615c0"]
-    if (debugB3Answer !== undefined || [...Object.keys(answers)].some(k => k.startsWith("00ea5764"))) {
-      console.log("[LogicEngine] evaluate called, B3 answer:", debugB3Answer, "| all keys:", Object.keys(answers).filter(k => DEBUG_UUIDS.has(k)))
+    // Log ALL answer keys on first evaluate (answers non-empty) to find B3 actual key
+    if (Object.keys(answers).length > 0 && Object.keys(answers).length <= 5) {
+      console.log("[LogicEngine] answers keys so far:", Object.keys(answers).join(" | "))
     }
 
     for (const rule of rules) {
@@ -206,11 +206,9 @@ export function buildLogicEngine(blocks: any[]): TallyLogicEngine {
       const ruleInvolvesDebug = rule.conditionals.some(c => DEBUG_UUIDS.has(c.fieldGroupUuid)) ||
         rule.actions.some(a => (a.blocks || []).some((u: string) => DEBUG_UUIDS.has(u)))
       if (ruleInvolvesDebug) {
-        console.log("[LogicEngine] rule fired=" + fired, {
-          op: rule.logicalOperator,
-          conds: rule.conditionals.map(c => ({ field: c.fieldGroupUuid.slice(0, 8), cmp: c.comparison, val: c.value, ans: answers[c.fieldGroupUuid] })),
-          actions: rule.actions.map(a => ({ type: a.type, blocks: a.blocks?.map((u: string) => u.slice(0, 8)) })),
-        })
+        const condsStr = rule.conditionals.map(c => c.fieldGroupUuid.slice(0,8) + ":" + c.comparison + "=" + JSON.stringify(c.value) + "(ans=" + JSON.stringify(answers[c.fieldGroupUuid]) + ")").join("; ")
+        const actsStr = rule.actions.map(a => a.type + "[" + (a.blocks || []).map((u: string) => u.slice(0,8)).join(",") + "]").join("; ")
+        console.log("[LogicEngine] rule fired=" + fired + " op=" + rule.logicalOperator + " | conds: " + condsStr + " | actions: " + actsStr)
       }
       if (!fired) continue
 
