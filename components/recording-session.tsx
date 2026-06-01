@@ -950,6 +950,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             return b.uuid !== inputTextBlock.uuid
           })
           console.log("[specify] texts:", optionBlocks.map((b:any)=>b.payload?.text), "found:", specifyOptionBlock?.payload?.text, "inputs:", allInputTextBlocks2.map((b:any)=>({uuid:b.uuid,groupUuid:b.groupUuid})))
+          console.log("[DBG]", {specifyOptionBlock: specifyOptionBlock?.payload?.text, inputs: allInputTextBlocks2.map((b:any)=>({uuid:b.uuid,groupUuid:b.groupUuid,text:b.payload?.text})), inputTextBlock: inputTextBlock?.uuid})
           const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock
             ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
             : undefined
