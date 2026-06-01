@@ -831,7 +831,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             pageBreakUuid = blocks[pi].uuid
             break
           }
-          if (blocks[pi].type === "TITLE") break
         }
 
         const nextTitleBlockIndex =
