@@ -567,7 +567,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     if (q.pageBreakUuid && logicResult.hiddenGroupUuids.has(q.pageBreakUuid)) return false
     if (_otherInputIds.has(q.id) && q.type === 'text') return false
     const titleLow = q.title.toLowerCase();
-    if (titleLow.includes("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.includes("respondent javobini")) return false;
+    if (titleLow.startsWith("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.startsWith("respondent javobini")) return false;
     if (q.type === "multi_text" && q.subFields) {
       // q.id o'zi yashirilgan bo'lsa
       if (logicResult.hiddenGroupUuids.has(q.id)) return false
