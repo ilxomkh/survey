@@ -560,12 +560,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   // ─── Visible questions (yashirilmaganlar) ──────────────────
   const _otherInputIds = new Set(questionsResolved.filter(q => q.otherInputGroupId).map(q => q.otherInputGroupId!))
-  const _dbgAtB3Id = "25dcabd7-6c43-4c58-9a9e-5d586b2ca0a2"
   const visibleQuestions = questionsResolved.filter((q) => {
-    const isDbgQ = q.id === _dbgAtB3Id || q.pageBreakUuid === "78a3dc24-2f52-4914-ba07-eeaa4be6ce69" || q.pageBreakGroupId === "7055c04f-5eb1-4e4f-b1c5-ad2d9572ccef"
-    if (isDbgQ) {
-      console.log("[visibleQ] @B3 question check:", { id: q.id, pageBreakUuid: q.pageBreakUuid, pageBreakGroupId: q.pageBreakGroupId, titleGroupId: q.titleGroupId, hidden78: logicResult.hiddenGroupUuids.has("78a3dc24-2f52-4914-ba07-eeaa4be6ce69"), hidden70: logicResult.hiddenGroupUuids.has("7055c04f-5eb1-4e4f-b1c5-ad2d9572ccef"), hiddenId: logicResult.hiddenGroupUuids.has(q.id) })
-    }
     if (logicResult.hiddenGroupUuids.has(q.id)) return false
     if (q.titleGroupId && logicResult.hiddenGroupUuids.has(q.titleGroupId)) return false
     if (q.pageBreakGroupId && logicResult.hiddenGroupUuids.has(q.pageBreakGroupId)) return false
@@ -574,12 +569,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     const titleLow = q.title.toLowerCase();
     if (titleLow.startsWith("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.startsWith("respondent javobini")) return false;
     if (q.type === "multi_text" && q.subFields) {
-      // q.id o'zi yashirilgan bo'lsa
       if (logicResult.hiddenGroupUuids.has(q.id)) return false
-      // barcha subFieldlar yashirilgan bo'lsa
       if (q.subFields.every((f) => logicResult.hiddenGroupUuids.has(f.id))) return false
     }
-    if (isDbgQ) console.log("[visibleQ] @B3 question VISIBLE (passed all checks)")
     return true
   })
   answersRef.current = answers
@@ -1514,6 +1506,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   const handleAnswer = (questionId: string, value: any) => {
     const newAnswers = { ...answers, [questionId]: value }
+    // Tally logic conditions reference questions by TITLE block groupUuid (titleGroupId),
+    // but answers are stored under option block groupUuid (q.id). Mirror to make conditions work.
+    const answeredQ = questionsResolved.find(q => q.id === questionId)
+    if (answeredQ?.titleGroupId && answeredQ.titleGroupId !== questionId) {
+      newAnswers[answeredQ.titleGroupId] = value
+    }
     setAnswers(newAnswers)
 
     const isOtherSelected =
@@ -1576,9 +1574,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       : current.filter((o) => o !== optionUuid)
 
     let newAnswers = { ...answers, [questionId]: updated }
-
-
-
+    const answeredCbQ = questionsResolved.find(q => q.id === questionId)
+    if (answeredCbQ?.titleGroupId && answeredCbQ.titleGroupId !== questionId) {
+      newAnswers[answeredCbQ.titleGroupId] = updated
+    }
     setAnswers(newAnswers)
 
     if (logicEngine) {

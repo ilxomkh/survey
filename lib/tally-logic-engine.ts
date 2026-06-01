@@ -183,34 +183,14 @@ export function buildLogicEngine(blocks: any[]): TallyLogicEngine {
     }
   }
 
-  const DEBUG_UUIDS = new Set([
-    "78a3dc24-2f52-4914-ba07-eeaa4be6ce69",
-    "7055c04f-5eb1-4e4f-b1c5-ad2d9572ccef",
-    "25dcabd7-6c43-4c58-9a9e-5d586b2ca0a2",
-    "00ea5764-4727-4eca-9070-4ab4d1c615c0",
-  ])
-
   function evaluate(answers: Answers): LogicResult {
     const hiddenByRule = new Set<string>(defaultHiddenByShowBlocks)
     const explicitlyHidden = new Set<string>()
     const shownByRule = new Set<string>()
     let jumpToPageUuid: string | null = null
 
-    // Log ALL answer keys on first evaluate (answers non-empty) to find B3 actual key
-    if (Object.keys(answers).length > 0 && Object.keys(answers).length <= 5) {
-      console.log("[LogicEngine] answers keys so far:", Object.keys(answers).join(" | "))
-    }
-
     for (const rule of rules) {
-      const fired = evalRule(rule, answers)
-      const ruleInvolvesDebug = rule.conditionals.some(c => DEBUG_UUIDS.has(c.fieldGroupUuid)) ||
-        rule.actions.some(a => (a.blocks || []).some((u: string) => DEBUG_UUIDS.has(u)))
-      if (ruleInvolvesDebug) {
-        const condsStr = rule.conditionals.map(c => c.fieldGroupUuid.slice(0,8) + ":" + c.comparison + "=" + JSON.stringify(c.value) + "(ans=" + JSON.stringify(answers[c.fieldGroupUuid]) + ")").join("; ")
-        const actsStr = rule.actions.map(a => a.type + "[" + (a.blocks || []).map((u: string) => u.slice(0,8)).join(",") + "]").join("; ")
-        console.log("[LogicEngine] rule fired=" + fired + " op=" + rule.logicalOperator + " | conds: " + condsStr + " | actions: " + actsStr)
-      }
-      if (!fired) continue
+      if (!evalRule(rule, answers)) continue
 
       for (const action of rule.actions) {
         if (action.type === "JUMP_TO_PAGE" && action.jumpToPage) {
@@ -230,12 +210,6 @@ export function buildLogicEngine(blocks: any[]): TallyLogicEngine {
     // but explicit HIDE_BLOCKS rules take priority over SHOW_BLOCKS
     for (const uuid of shownByRule) {
       if (!explicitlyHidden.has(uuid)) hiddenByRule.delete(uuid)
-    }
-
-    const debugHidden78 = hiddenByRule.has("78a3dc24-2f52-4914-ba07-eeaa4be6ce69")
-    const debugHidden70 = hiddenByRule.has("7055c04f-5eb1-4e4f-b1c5-ad2d9572ccef")
-    if (debugB3Answer !== undefined || debugHidden78 || debugHidden70) {
-      console.log("[LogicEngine] result: 78a3dc24 hidden=" + debugHidden78 + " 7055c04f hidden=" + debugHidden70 + " | defaultHidden has 78a3dc24=" + defaultHiddenByShowBlocks.has("78a3dc24-2f52-4914-ba07-eeaa4be6ce69"))
     }
 
     return { hiddenGroupUuids: hiddenByRule, jumpToPageUuid }
