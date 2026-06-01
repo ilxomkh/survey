@@ -50,6 +50,9 @@ interface Question {
   subFields?: { id: string }[]
   /** titleBlock.groupUuid — используется для скрытия через HIDE_BLOCKS */
   titleGroupId?: string
+  /** Дополнительный «укажите» вариант (не Другой) с текстовым полем */
+  specifyOptionUuid?: string
+  specifyInputGroupId?: string
   /** groupUuid PAGE_BREAK-а перед этим вопросом — скрытый PAGE_BREAK скрывает всю страницу */
   pageBreakGroupId?: string
   /** uuid PAGE_BREAK-а перед этим вопросом (Tally иногда хранит uuid вместо groupUuid в hideBlocks) */
@@ -560,9 +563,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   // ─── Visible questions (yashirilmaganlar) ──────────────────
   const _otherInputIds = new Set(questionsResolved.filter(q => q.otherInputGroupId).map(q => q.otherInputGroupId!))
+
+  // @B3 dynamic questions: hide if B3 = fixed brand (Click/Payme/Uzum Bank)
+  const _b3Q = questionsResolved.find(q3 => titleMatchesAnyFragment(q3.title, Q3_FREQUENCY_TITLE_FRAGMENTS))
+  const _b3SelUuid = _b3Q ? answers[_b3Q.id] : undefined
+  const _b3SelText = (_b3Q?.options?.find(o => o.uuid === _b3SelUuid)?.text ?? String(_b3SelUuid ?? "")).toLowerCase()
+  const _b3IsFixed = Boolean(_b3SelText) && ["click", "payme", "uzum bank"].some(b => _b3SelText.includes(b))
+
   const visibleQuestions = questionsResolved.filter((q) => {
     if (logicResult.hiddenGroupUuids.has(q.id)) return false
     if (q.titleGroupId && logicResult.hiddenGroupUuids.has(q.titleGroupId)) return false
+    // Hide @B3 dynamic questions when B3 = fixed brand
+    if (_b3IsFixed && (q.title.includes("@B3") || q.title.includes("@b3"))) return false
     if (q.pageBreakGroupId && logicResult.hiddenGroupUuids.has(q.pageBreakGroupId)) return false
     if (q.pageBreakUuid && logicResult.hiddenGroupUuids.has(q.pageBreakUuid)) return false
     if (_otherInputIds.has(q.id) && q.type === 'text') return false
@@ -922,6 +934,16 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             ? inputTextBlock.groupUuid
             : undefined
 
+          // Detect secondary "specify" option: (укажите какую), (qaysi?), etc.
+          const specifyOptionBlock = optionBlocks.find((b: any) => {
+            if (b.uuid === otherOptionBlock?.uuid) return false
+            const t = (b.payload?.text || "").toLowerCase()
+            return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(specify") || t.includes("(yozing")
+          })
+          const allInputTextBlocks2 = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
+          const specifyInputTextBlock = allInputTextBlocks2.find((b: any) => b.groupUuid !== inputTextBlock?.groupUuid)
+          const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock ? specifyInputTextBlock.groupUuid : undefined
+
           const lockSet = new Set<string>(checkboxLockUuids ?? [])
           if (otherOptionBlock) lockSet.add(otherOptionBlock.uuid)
           const shuffledOptions = lockSet.size > 0
@@ -942,6 +964,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             required: titleBlock.payload?.isRequired === true,
             otherOptionUuid: otherOptionBlock?.uuid,
             otherInputGroupId: checkboxOtherInputGroupId,
+            specifyOptionUuid: specifyOptionBlock?.uuid,
+            specifyInputGroupId,
             checkboxLockUuids,
           }
         }
@@ -1463,6 +1487,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                       const customText = String(snapshotAnswers[q.otherInputGroupId] ?? "").trim()
                       if (customText) return `Другой: ${customText}`
                   }
+                  if (uuid === q.specifyOptionUuid && q.specifyInputGroupId) {
+                      const specText = String(snapshotAnswers[q.specifyInputGroupId] ?? "").trim()
+                      const optLabel = q.options?.find(o => o.uuid === uuid)?.text ?? "Укажите"
+                      if (specText) return `${optLabel}: ${specText}`
+                  }
                   const found = q.options!.find((o) => o.uuid === uuid)
                   return found?.text ?? uuid
               })
@@ -1951,6 +1980,20 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                               setAnswers((prev: Answers) => ({
                                 ...prev,
                                 [currentQuestion.otherInputGroupId!]: e.target.value,
+                              }))
+                            }
+                            placeholder={ui.placeholderOther}
+                            className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
+                        )}
+                        {option.uuid === currentQuestion.specifyOptionUuid && isChecked && currentQuestion.specifyInputGroupId && (
+                          <input
+                            type="text"
+                            value={answers[currentQuestion.specifyInputGroupId!] || ""}
+                            onChange={(e: any) =>
+                              setAnswers((prev: Answers) => ({
+                                ...prev,
+                                [currentQuestion.specifyInputGroupId!]: e.target.value,
                               }))
                             }
                             placeholder={ui.placeholderOther}
