@@ -1066,7 +1066,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         const surveyData = await Promise.race([
           apiClient.getSurveyQuestions(survey.id, sessionId),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(locale === "uz" ? "Savollar yuklanmadi (timeout)" : "Вопросы не загрузились (timeout)")), 15000)
+            setTimeout(() => reject(new Error(locale === "uz" ? "Savollar yuklanmadi (timeout)" : "Вопросы не загрузились (timeout)")), 45000)
           ),
         ])
 
