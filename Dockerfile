@@ -8,7 +8,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 ARG BUILD_DATE
 COPY . .
-RUN npm run build
+RUN npm install @next/swc-linux-x64-musl --no-save && npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
