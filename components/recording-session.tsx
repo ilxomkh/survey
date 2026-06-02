@@ -1907,15 +1907,15 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
             </h3>
 
             {currentQuestion.type === "multiple_choice" && currentQuestion.options && (
-              <div className="space-y-2">
-                {currentQuestion.options
-                  .filter((option) => !logicResult.hiddenGroupUuids.has(option.uuid))
-                  .map((option) => {
-                    const isSelected = answers[currentQuestion.id] === option.uuid
-                    const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
-                    return (
-                      <div key={option.uuid}>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  {currentQuestion.options
+                    .filter((option) => !logicResult.hiddenGroupUuids.has(option.uuid))
+                    .map((option) => {
+                      const isSelected = answers[currentQuestion.id] === option.uuid
+                      return (
                         <label
+                          key={option.uuid}
                           className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
                           style={{
                             borderColor: isSelected ? "hsl(var(--primary))" : undefined,
@@ -1936,37 +1936,39 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                             <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
                           )}
                         </label>
-                        {isOtherOption && isSelected && currentQuestion.otherInputGroupId && (
-                          <input
-                            type="text"
-                            value={answers[currentQuestion.otherInputGroupId!] || ""}
-                            onChange={(e) =>
-                              setAnswers((prev) => ({
-                                ...prev,
-                                [currentQuestion.otherInputGroupId!]: e.target.value,
-                              }))
-                            }
-                            placeholder={ui.placeholderOther}
-                            className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
-                        )}
-                        {option.uuid === currentQuestion.specifyOptionUuid && isSelected && currentQuestion.specifyInputGroupId && (
-                          <input
-                            type="text"
-                            value={answers[currentQuestion.specifyInputGroupId!] || ""}
-                            onChange={(e) =>
-                              setAnswers((prev) => ({
-                                ...prev,
-                                [currentQuestion.specifyInputGroupId!]: e.target.value,
-                              }))
-                            }
-                            placeholder={ui.placeholderOther}
-                            className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
-                        )}
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                </div>
+                
+                {answers[currentQuestion.id] === currentQuestion.specifyOptionUuid && currentQuestion.specifyInputGroupId && (
+                  <input
+                    type="text"
+                    value={answers[currentQuestion.specifyInputGroupId!] || ""}
+                    onChange={(e) =>
+                      setAnswers((prev) => ({
+                        ...prev,
+                        [currentQuestion.specifyInputGroupId!]: e.target.value,
+                      }))
+                    }
+                    placeholder={ui.placeholderOther}
+                    className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  />
+                )}
+                
+                {answers[currentQuestion.id] === currentQuestion.otherOptionUuid && currentQuestion.otherInputGroupId && (
+                  <input
+                    type="text"
+                    value={answers[currentQuestion.otherInputGroupId!] || ""}
+                    onChange={(e) =>
+                      setAnswers((prev) => ({
+                        ...prev,
+                        [currentQuestion.otherInputGroupId!]: e.target.value,
+                      }))
+                    }
+                    placeholder={ui.placeholderOther}
+                    className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  />
+                )}
               </div>
             )}
 
@@ -2017,17 +2019,18 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                   .filter((o): o is QuestionOption => !!o && !logicResult.hiddenGroupUuids.has(o.uuid))
                 : opts.filter((option: QuestionOption) => !logicResult.hiddenGroupUuids.has(option.uuid))
               )
+              const selected: string[] = Array.isArray(answers[currentQuestion.id])
+                ? answers[currentQuestion.id]
+                : []
+                
               return (
-                <div className="space-y-2">
-                  {visibleOptions.map((option: QuestionOption) => {
-                    const selected: string[] = Array.isArray(answers[currentQuestion.id])
-                      ? answers[currentQuestion.id]
-                      : []
-                    const isChecked = selected.includes(option.uuid)
-                    const isOtherOption = option.uuid === currentQuestion.otherOptionUuid
-                    return (
-                      <div key={option.uuid}>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    {visibleOptions.map((option: QuestionOption) => {
+                      const isChecked = selected.includes(option.uuid)
+                      return (
                         <label
+                          key={option.uuid}
                           className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
                           style={{ borderColor: isChecked ? "hsl(var(--primary))" : undefined }}
                         >
@@ -2042,37 +2045,39 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                           </span>
                           {isChecked && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
                         </label>
-                        {isOtherOption && isChecked && currentQuestion.otherInputGroupId && (
-                          <input
-                            type="text"
-                            value={answers[currentQuestion.otherInputGroupId!] || ""}
-                            onChange={(e: any) =>
-                              setAnswers((prev: Answers) => ({
-                                ...prev,
-                                [currentQuestion.otherInputGroupId!]: e.target.value,
-                              }))
-                            }
-                            placeholder={ui.placeholderOther}
-                            className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
-                        )}
-                        {option.uuid === currentQuestion.specifyOptionUuid && isChecked && currentQuestion.specifyInputGroupId && (
-                          <input
-                            type="text"
-                            value={answers[currentQuestion.specifyInputGroupId!] || ""}
-                            onChange={(e: any) =>
-                              setAnswers((prev: Answers) => ({
-                                ...prev,
-                                [currentQuestion.specifyInputGroupId!]: e.target.value,
-                              }))
-                            }
-                            placeholder={ui.placeholderOther}
-                            className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
-                        )}
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  </div>
+                  
+                  {currentQuestion.specifyOptionUuid && selected.includes(currentQuestion.specifyOptionUuid) && currentQuestion.specifyInputGroupId && (
+                    <input
+                      type="text"
+                      value={answers[currentQuestion.specifyInputGroupId!] || ""}
+                      onChange={(e: any) =>
+                        setAnswers((prev: Answers) => ({
+                          ...prev,
+                          [currentQuestion.specifyInputGroupId!]: e.target.value,
+                        }))
+                      }
+                      placeholder={ui.placeholderOther}
+                      className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    />
+                  )}
+                  
+                  {currentQuestion.otherOptionUuid && selected.includes(currentQuestion.otherOptionUuid) && currentQuestion.otherInputGroupId && (
+                    <input
+                      type="text"
+                      value={answers[currentQuestion.otherInputGroupId!] || ""}
+                      onChange={(e: any) =>
+                        setAnswers((prev: Answers) => ({
+                          ...prev,
+                          [currentQuestion.otherInputGroupId!]: e.target.value,
+                        }))
+                      }
+                      placeholder={ui.placeholderOther}
+                      className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    />
+                  )}
                 </div>
               )
             })()}
