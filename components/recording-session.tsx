@@ -423,7 +423,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     jumpToPageUuid: null,
   })
 
-
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const uploadPromisesRef = useRef<Promise<any>[]>([])
   const audioChunksRef = useRef<Blob[]>([])
@@ -518,7 +517,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     }
   }, [questionsResolved])
 
-  const _otherInputIds = new Set(questionsResolved.filter(q => q.otherInputGroupId).map(q => q.otherInputGroupId!))
+  // Собираем ID связанных текстовых полей, чтобы скрыть их как отдельные экраны
+  const _otherInputIds = new Set(
+    questionsResolved.flatMap(q => [q.otherInputGroupId, q.specifyInputGroupId]).filter(Boolean) as string[]
+  )
 
   const _b3Q = questionsResolved.find(q3 => titleMatchesAnyFragment(q3.title, Q3_FREQUENCY_TITLE_FRAGMENTS))
   const _b3SelUuid = _b3Q ? answers[_b3Q.id] : undefined
@@ -532,8 +534,11 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     if (q.pageBreakGroupId && logicResult.hiddenGroupUuids.has(q.pageBreakGroupId)) return false
     if (q.pageBreakUuid && logicResult.hiddenGroupUuids.has(q.pageBreakUuid)) return false
     if (_otherInputIds.has(q.id) && q.type === 'text') return false
+    
+    // Safety net hide logic
     const titleLow = q.title.toLowerCase();
     if (titleLow.startsWith("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.startsWith("respondent javobini")) return false;
+    
     if (q.type === "multi_text" && q.subFields) {
       if (logicResult.hiddenGroupUuids.has(q.id)) return false
       if (q.subFields.every((f) => logicResult.hiddenGroupUuids.has(f.id))) return false
@@ -1079,6 +1084,50 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             }
           }
         }
+
+        // --- УМНОЕ ПРИВЯЗЫВАНИЕ СКРЫТЫХ ВОПРОСОВ (POST-PROCESSING) ---
+        for (let i = 0; i < extractedQuestions.length; i++) {
+          const q = extractedQuestions[i];
+          if ((q.type === 'multiple_choice' || q.type === 'checkbox') && q.options) {
+             // 1. Привязка "Другой" (если он был отдельным вопросом)
+             const otherOpt = q.options.find(o => {
+                 const t = o.text.toLowerCase().trim();
+                 return t === "boshqa" || t === "другой" || t === "other" || t.includes("другой [") || t.includes("boshqa [") || t.includes("other [");
+             });
+             if (otherOpt && !q.otherInputGroupId) {
+                 const nextQ = extractedQuestions.find((nq, idx) => idx > i && nq.type === 'text' && (
+                     nq.title.toLowerCase().includes("записать") || 
+                     nq.title.toLowerCase().includes("respondent") || 
+                     nq.title.toLowerCase().includes("yozing") || 
+                     nq.title.toLowerCase().includes("boshqa")
+                 ));
+                 if (nextQ) {
+                     q.otherOptionUuid = otherOpt.uuid;
+                     q.otherInputGroupId = nextQ.id;
+                 }
+             }
+
+             // 2. Привязка "Укажите какую/Qaysi" (так как это 100% отдельный вопрос в Tally)
+             const specifyOpt = q.options.find(o => {
+                 if (o.uuid === q.otherOptionUuid) return false;
+                 const t = o.text.toLowerCase();
+                 return t.includes("укажите") || t.includes("qaysi") || t.includes("specify") || t.includes("funksiya") || t.includes("функци");
+             });
+             if (specifyOpt && !q.specifyInputGroupId) {
+                 const nextQ = extractedQuestions.find((nq, idx) => idx > i && nq.type === 'text' && (
+                     nq.title.toLowerCase().includes("укажите") || 
+                     nq.title.toLowerCase().includes("qaysi") || 
+                     nq.title.toLowerCase().includes("функци") || 
+                     nq.title.toLowerCase().includes("funksiya")
+                 ));
+                 if (nextQ) {
+                     q.specifyOptionUuid = specifyOpt.uuid;
+                     q.specifyInputGroupId = nextQ.id;
+                 }
+             }
+          }
+        }
+        // -------------------------------------------------------------
 
         setQuestions(extractedQuestions)
 
@@ -1827,7 +1876,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                         [currentQuestion.specifyInputGroupId!]: e.target.value,
                       }))
                     }
-                    placeholder={ui.placeholderOther}
+                    placeholder={questionsResolved.find(q => q.id === currentQuestion.specifyInputGroupId)?.title || ui.placeholderOther}
                     className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   />
                 )}
@@ -1842,7 +1891,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                         [currentQuestion.otherInputGroupId!]: e.target.value,
                       }))
                     }
-                    placeholder={ui.placeholderOther}
+                    placeholder={questionsResolved.find(q => q.id === currentQuestion.otherInputGroupId)?.title || ui.placeholderOther}
                     className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   />
                 )}
@@ -1934,7 +1983,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                           [currentQuestion.specifyInputGroupId!]: e.target.value,
                         }))
                       }
-                      placeholder={ui.placeholderOther}
+                      placeholder={questionsResolved.find(q => q.id === currentQuestion.specifyInputGroupId)?.title || ui.placeholderOther}
                       className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                     />
                   )}
@@ -1949,7 +1998,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                           [currentQuestion.otherInputGroupId!]: e.target.value,
                         }))
                       }
-                      placeholder={ui.placeholderOther}
+                      placeholder={questionsResolved.find(q => q.id === currentQuestion.otherInputGroupId)?.title || ui.placeholderOther}
                       className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                     />
                   )}
