@@ -923,38 +923,38 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             ? lockRaw.filter((u: unknown) => typeof u === "string")
             : undefined
 
-          const _allItBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
+          const inputTextBlock = siblingBlocks.find((b: any) => { if (b.type !== "INPUT_TEXT") return false; const label = (b.payload?.text || b.text || "").toLowerCase(); return !label || label.includes("записать") || label.includes("respondent") || label.includes("yozing") || label.includes("boshqa"); })
           const otherOptionBlock = optionBlocks.find((b: any) => {
             const t = (b.payload?.text || "").toLowerCase().trim()
             return t === "boshqa" || t === "другой" || t === "other" ||
               t === "другой [записать]" || t === "boshqa [yozib oling]" ||
               (/^(boshqa|другой|other)[\s\[\(]/.test(t) && t.length <= 30)
           })
-          const specifyOptionBlock = optionBlocks.find((b: any) => {
-            if (b.uuid === otherOptionBlock?.uuid) return false
-            const t = (b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "").toLowerCase()
-            return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(qaysi ")
-              || t.includes("укажите какую") || t.includes("укажите какой")
-              || t.includes("укажите какие") || t.includes("укажите какая")
-              || t.includes("конкретную функцию") || t.includes("aniq bir funksiya")
-              || t.includes("konkret funksiya") || t.includes("kerak bo")
-              || (t.includes("funksiya") && t.includes("("))
-              || (t.includes("функци") && t.includes("("))
-          })
-          const inputTextBlock = _allItBlocks.find((b: any) => {
-            const label = (b.payload?.text || b.payload?.placeholder || b.text || "").toLowerCase()
-            return label.includes("записать") || label.includes("respondent") || label.includes("yozing")
-          }) ?? (_allItBlocks.length >= 2 ? _allItBlocks[_allItBlocks.length - 1] : (otherOptionBlock && !specifyOptionBlock ? _allItBlocks[0] : undefined))
           const checkboxOtherInputGroupId = otherOptionBlock && inputTextBlock
             ? (inputTextBlock.uuid || inputTextBlock.groupUuid)
             : undefined
-          const specifyInputTextBlock = _allItBlocks.find((b: any) => b.uuid !== inputTextBlock?.uuid) ?? (_allItBlocks.length > 0 && !checkboxOtherInputGroupId ? _allItBlocks[0] : undefined)
-          // fallback: use specifyOptionBlock uuid as key so the field always gets a unique storage slot
-          const specifyInputGroupId = specifyOptionBlock
-            ? (specifyInputTextBlock && specifyInputTextBlock.uuid !== inputTextBlock?.uuid
-              ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
-              : "specify__" + specifyOptionBlock.uuid)
+
+          // Detect secondary "specify" option: (укажите какую), (qaysi?), etc.
+          const specifyOptionBlock = optionBlocks.find((b: any) => {
+            if (b.uuid === otherOptionBlock?.uuid) return false
+            const t = (b.payload?.text || "").toLowerCase()
+            return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(specify") || t.includes("(yozing")
+              || t.includes("укажите какую") || t.includes("укажите какой") || t.includes("укажите какие")
+              || t.includes("конкретную функцию") || t.includes("aniq bir funksiya")
+              || t.includes("konkret funksiya") || t.includes("qaysi funksiya")
+          })
+          const allInputTextBlocks2 = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
+          // Find specify input by uuid (groupUuid can be shared with "other" block)
+          // specify input = any INPUT_TEXT that is NOT the "other" input;
+          // if inputTextBlock is undefined (no "other"), take the first INPUT_TEXT;
+          // if two inputs exist and inputTextBlock is the first, take the second.
+          const specifyInputTextBlock = allInputTextBlocks2.length > 0
+            ? (allInputTextBlocks2.find((b: any) => b.uuid !== inputTextBlock?.uuid) ?? allInputTextBlocks2[0])
             : undefined
+          const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock
+            ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
+            : undefined
+
           const lockSet = new Set<string>(checkboxLockUuids ?? [])
           if (otherOptionBlock) lockSet.add(otherOptionBlock.uuid)
           const shuffledOptions = lockSet.size > 0
@@ -1001,6 +1001,22 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               (/^(boshqa|другой|other)[\s\[\(]/.test(t) && t.length <= 30)
           })
 
+          const mcSpecifyOptionBlock = choiceOptionBlocks.find((b: any) => {
+            if (b.uuid === mcOtherOptionBlock?.uuid) return false
+            const t = (b.payload?.text || "").toLowerCase()
+            return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(specify") || t.includes("(yozing")
+              || t.includes("укажите какую") || t.includes("укажите какой") || t.includes("укажите какие")
+              || t.includes("конкретную функцию") || t.includes("aniq bir funksiya")
+              || t.includes("konkret funksiya") || t.includes("qaysi funksiya")
+          })
+          const allMcInputTextBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
+          const mcSpecifyInputTextBlock = allMcInputTextBlocks.length > 0
+            ? (allMcInputTextBlocks.find((b: any) => b.uuid !== mcInputTextBlock?.uuid) ?? allMcInputTextBlocks[0])
+            : undefined
+          const mcSpecifyInputGroupId = mcSpecifyOptionBlock && mcSpecifyInputTextBlock
+            ? (mcSpecifyInputTextBlock.uuid || mcSpecifyInputTextBlock.groupUuid)
+            : undefined
+
           const mcLockSet = new Set<string>()
           if (mcOtherOptionBlock) mcLockSet.add(mcOtherOptionBlock.uuid)
           const mcShuffled = mcLockSet.size > 0
@@ -1019,7 +1035,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             options: mcShuffled,
             required: titleBlock.payload?.isRequired === true,
             otherOptionUuid: mcOtherOptionBlock?.uuid,
-            otherInputGroupId: mcInputTextBlock?.groupUuid,
+            otherInputGroupId: mcOtherOptionBlock && mcInputTextBlock ? (mcInputTextBlock.uuid || mcInputTextBlock.groupUuid) : undefined,
+            specifyOptionUuid: mcSpecifyOptionBlock?.uuid,
+            specifyInputGroupId: mcSpecifyInputGroupId,
           }
         }
 
@@ -1487,6 +1505,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               if (value === q.otherOptionUuid && q.otherInputGroupId) {
                   const customText = String(snapshotAnswers[q.otherInputGroupId] ?? "").trim()
                   value = customText ? `Другой: ${customText}` : (q.options.find((o) => o.uuid === value)?.text ?? value)
+              } else if (value === q.specifyOptionUuid && q.specifyInputGroupId) {
+                  const specText = String(snapshotAnswers[q.specifyInputGroupId] ?? "").trim()
+                  const optLabel = q.options.find((o) => o.uuid === value)?.text ?? "Укажите"
+                  value = specText ? `${optLabel}: ${specText}` : optLabel
               } else {
                   const found = q.options.find((o) => o.uuid === value)
                   value = found?.text ?? value
@@ -1718,9 +1740,7 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
 
     // Require specifyInputGroupId to be filled when specifyOptionUuid is selected
     if (currentQuestion.specifyOptionUuid && currentQuestion.specifyInputGroupId) {
-      const isSpecifySelected =
-        Array.isArray(answers[currentQuestion.id]) &&
-        (answers[currentQuestion.id] as string[]).includes(currentQuestion.specifyOptionUuid)
+      const isSpecifySelected = currentQuestion.type === "multiple_choice" ? answers[currentQuestion.id] === currentQuestion.specifyOptionUuid : (Array.isArray(answers[currentQuestion.id]) && (answers[currentQuestion.id] as string[]).includes(currentQuestion.specifyOptionUuid))
       if (isSpecifySelected) {
         const specifyText = answers[currentQuestion.specifyInputGroupId]
         if (!specifyText || String(specifyText).trim() === "") return false
@@ -1910,6 +1930,20 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                               setAnswers((prev) => ({
                                 ...prev,
                                 [currentQuestion.otherInputGroupId!]: e.target.value,
+                              }))
+                            }
+                            placeholder={ui.placeholderOther}
+                            className="mt-1 w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
+                        )}
+                        {option.uuid === currentQuestion.specifyOptionUuid && isSelected && currentQuestion.specifyInputGroupId && (
+                          <input
+                            type="text"
+                            value={answers[currentQuestion.specifyInputGroupId!] || ""}
+                            onChange={(e) =>
+                              setAnswers((prev) => ({
+                                ...prev,
+                                [currentQuestion.specifyInputGroupId!]: e.target.value,
                               }))
                             }
                             placeholder={ui.placeholderOther}
