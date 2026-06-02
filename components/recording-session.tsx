@@ -948,9 +948,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const checkboxOtherInputGroupId = otherOptionBlock && inputTextBlock
             ? (inputTextBlock.uuid || inputTextBlock.groupUuid)
             : undefined
-          const specifyInputTextBlock = _allItBlocks.find((b: any) => b.uuid !== inputTextBlock?.uuid) ?? _allItBlocks[0]
-          const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock
-            ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
+          const specifyInputTextBlock = _allItBlocks.find((b: any) => b.uuid !== inputTextBlock?.uuid) ?? (_allItBlocks.length > 0 && !checkboxOtherInputGroupId ? _allItBlocks[0] : undefined)
+          // fallback: use specifyOptionBlock uuid as key so the field always gets a unique storage slot
+          const specifyInputGroupId = specifyOptionBlock
+            ? (specifyInputTextBlock && specifyInputTextBlock.uuid !== inputTextBlock?.uuid
+              ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
+              : "specify__" + specifyOptionBlock.uuid)
             : undefined
           const lockSet = new Set<string>(checkboxLockUuids ?? [])
           if (otherOptionBlock) lockSet.add(otherOptionBlock.uuid)
