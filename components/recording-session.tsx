@@ -303,13 +303,6 @@ function limitP2PTransferOptions(question: Question, previousQuestion: Question 
   )
 
   if (selectedOptions.length === 0 || extraOptions.length !== P2P_TRANSFER_EXTRA_OPTIONS.length) {
-    console.warn("[RecordingSession] P2P transfer options were not limited: expected options not found", {
-      question: question.title,
-      previousQuestion: previousQuestion?.title,
-      selectedPreviousUuids,
-      found: options.map((option) => option.text),
-      expectedExtraOptions: P2P_TRANSFER_EXTRA_OPTIONS,
-    })
     return question
   }
 
@@ -389,13 +382,11 @@ async function uploadAudioWithRetry(
       await apiClient.uploadAudio(sessionId, blob)
       return
     } catch (err) {
-      console.warn(`[Audio] Попытка ${i + 1}/${retries} не удалась:`, err)
       if (i < retries - 1) {
         await new Promise((r) => setTimeout(r, 2000 * (i + 1)))
       }
     }
   }
-  console.error("[Audio] Все попытки исчерпаны, чанк потерян")
   throw new Error("[Audio] Все попытки исчерпаны, чанк не загружен")
 }
 
@@ -517,7 +508,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     }
   }, [questionsResolved])
 
-  // Собираем ID связанных текстовых полей, чтобы скрыть их как отдельные экраны
   const _otherInputIds = new Set(
     questionsResolved.flatMap(q => [q.otherInputGroupId, q.specifyInputGroupId]).filter(Boolean) as string[]
   )
@@ -535,7 +525,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     if (q.pageBreakUuid && logicResult.hiddenGroupUuids.has(q.pageBreakUuid)) return false
     if (_otherInputIds.has(q.id) && q.type === 'text') return false
     
-    // Safety net hide logic
     const titleLow = q.title.toLowerCase();
     if (titleLow.startsWith("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.startsWith("respondent javobini")) return false;
     
@@ -1085,11 +1074,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // --- УМНОЕ ПРИВЯЗЫВАНИЕ СКРЫТЫХ ВОПРОСОВ (POST-PROCESSING) ---
         for (let i = 0; i < extractedQuestions.length; i++) {
           const q = extractedQuestions[i];
           if ((q.type === 'multiple_choice' || q.type === 'checkbox') && q.options) {
-             // 1. Привязка "Другой" (если он был отдельным вопросом)
              const otherOpt = q.options.find(o => {
                  const t = o.text.toLowerCase().trim();
                  return t === "boshqa" || t === "другой" || t === "other" || t.includes("другой [") || t.includes("boshqa [") || t.includes("other [");
@@ -1099,7 +1086,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                      nq.title.toLowerCase().includes("записать") || 
                      nq.title.toLowerCase().includes("respondent") || 
                      nq.title.toLowerCase().includes("yozing") || 
-                     nq.title.toLowerCase().includes("boshqa")
+                     nq.title.toLowerCase().includes("boshqa") ||
+                     nq.title.trim() === ""
                  ));
                  if (nextQ) {
                      q.otherOptionUuid = otherOpt.uuid;
@@ -1107,18 +1095,21 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                  }
              }
 
-             // 2. Привязка "Укажите какую/Qaysi" (так как это 100% отдельный вопрос в Tally)
              const specifyOpt = q.options.find(o => {
                  if (o.uuid === q.otherOptionUuid) return false;
                  const t = o.text.toLowerCase();
                  return t.includes("укажите") || t.includes("qaysi") || t.includes("specify") || t.includes("funksiya") || t.includes("функци");
              });
              if (specifyOpt && !q.specifyInputGroupId) {
-                 const nextQ = extractedQuestions.find((nq, idx) => idx > i && nq.type === 'text' && (
+                 const nextQ = extractedQuestions.find((nq, idx) => idx > i && nq.type === 'text' && nq.id !== q.otherInputGroupId && (
                      nq.title.toLowerCase().includes("укажите") || 
                      nq.title.toLowerCase().includes("qaysi") || 
                      nq.title.toLowerCase().includes("функци") || 
-                     nq.title.toLowerCase().includes("funksiya")
+                     nq.title.toLowerCase().includes("funksiya") ||
+                     nq.title.toLowerCase().includes("записать") || 
+                     nq.title.toLowerCase().includes("respondent") || 
+                     nq.title.toLowerCase().includes("yozing") ||
+                     nq.title.trim() === ""
                  ));
                  if (nextQ) {
                      q.specifyOptionUuid = specifyOpt.uuid;
@@ -1127,7 +1118,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
              }
           }
         }
-        // -------------------------------------------------------------
 
         setQuestions(extractedQuestions)
 
