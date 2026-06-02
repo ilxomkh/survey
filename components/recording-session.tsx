@@ -34,7 +34,6 @@ interface Question {
   id: string
   title: string
   rawSchema?: any
-  /** HEADING_2 block text preceding this question (e.g. "A4. Какие приложения...") */
   contextHeading?: string
   type: string
   options?: QuestionOption[]
@@ -44,22 +43,15 @@ interface Question {
   multiple?: boolean
   otherOptionUuid?: string
   otherInputGroupId?: string
-  /** UUID вариантов, зафиксированных в Tally (payload.lockInPlace), не перемешивать */
   checkboxLockUuids?: string[]
-  /** Для multi_text: отдельные поля (каждый INPUT_FIELD — отдельный uuid) */
   subFields?: { id: string }[]
-  /** titleBlock.groupUuid — используется для скрытия через HIDE_BLOCKS */
   titleGroupId?: string
-  /** Дополнительный «укажите» вариант (не Другой) с текстовым полем */
   specifyOptionUuid?: string
   specifyInputGroupId?: string
-  /** groupUuid PAGE_BREAK-а перед этим вопросом — скрытый PAGE_BREAK скрывает всю страницу */
   pageBreakGroupId?: string
-  /** uuid PAGE_BREAK-а перед этим вопросом (Tally иногда хранит uuid вместо groupUuid в hideBlocks) */
   pageBreakUuid?: string
 }
 
-/** Текст из поля «другой» Q2/Q3 (как в оригинальной логике @). */
 function getLegacyOtherMentionText(questions: Question[], answersMap: Answers): string | null {
   const q2Market = resolveMarketplaceQ2(questions)
   const q3Idx = resolveFrequencyQ3Index(questions, q2Market)
@@ -75,7 +67,6 @@ function getLegacyOtherMentionText(questions: Question[], answersMap: Answers): 
   return null
 }
 
-/** Подпись выбранного варианта в Q3 «чаще всего» (в т.ч. динамические options после Q2). */
 function formatQ3ChoiceAsDisplay(q3: Question | undefined, answersMap: Answers): string | null {
   if (!q3) return null
   const v = answersMap[q3.id]
@@ -91,7 +82,6 @@ function formatQ3ChoiceAsDisplay(q3: Question | undefined, answersMap: Answers):
   return String(v)
 }
 
-/** Вопрос Q3 «чаще всего»: сначала индекс в полном списке, иначе первый MC/dropdown после Q2 в видимой цепочке. */
 function findQ3FrequencyQuestion(
   questions: Question[],
   visibleQuestions: Question[]
@@ -115,10 +105,6 @@ function findQ3FrequencyQuestion(
   )
 }
 
-/**
- * После шага Q3 «чаще всего» (по visibleQuestions) в @ подставляем подпись выбора из Q3.
- * На шаге Q3 и раньше — только текст «другой» Q2/Q3 (legacy).
- */
 function getAtMentionReplacement(
   questions: Question[],
   visibleQuestions: Question[],
@@ -146,9 +132,6 @@ function applyAtMentionPlain(text: string, mention: string | null | undefined): 
   if (!value || !text.includes("@")) return text
 
   return String(text)
-    // Tally mention examples:
-    // @B3. Ularning qaysi biridan ...
-    // @B3. Каким приложением Вы пользуетесь ЧАЩЕ ВСЕГО?
     .replace(/@B3\.[^?。！？!\n\r)]*[?。！？!]?/gi, value)
     .replace(/@B3\b\.?/gi, value)
 }
@@ -159,12 +142,10 @@ interface RecordingSessionProps {
   onComplete: () => void
 }
 
-/** Tally хранит CSS-стили как ["tagfont-weight", ...], ["tagcolor", ...] и т.п. — это не текст */
 function isTallyStyleMarker(s: string): boolean {
   return /^tag[a-z]/.test(s)
 }
 
-/** Плоский текст из группы фрагментов Tally (как в extractTextFromSchema для одного блока) */
 function extractPlainTextFromSchemaGroup(first: any[]): string {
   if (!Array.isArray(first)) return ""
   return first
@@ -179,26 +160,15 @@ function extractPlainTextFromSchemaGroup(first: any[]): string {
     .join("")
 }
 
-/**
- * Если в объединённом тексте есть замкнутая пара `{…}`, склеиваем фрагменты Tally и красим
- * содержимое скобок. Иначе (mention, color, background-color) строка режется — `{` и `}` в
- * разных узлах, regex не срабатывает (чёрный текст в RU Q3, узб. Q2). Подсветка фона Tally на
- * таком заголовке может не сохраниться — приоритет у читаемых инструкций в `{…}`.
- */
-
-/** Полноширинные фигурные скобки (иногда в типографике / копипасте) */
 function normalizeCurlyBraceChars(text: string): string {
   return text.replace(/\uFF5B/g, "{").replace(/\uFF5D/g, "}")
 }
 
-/** Tally иногда склеивает закрывающую `}` со стилевым токеном (`}tagfont-weight`) в одну строку. */
 function sanitizeTallyTextLeak(text: string): string {
   if (!text) return text
-  // Strip only Tally CSS marker suffix glued directly to } (no space), keep {…} content visible
   return text.replace(/\}tag[a-z][a-z0-9-]*/g, "}").trimEnd()
 }
 
-/** Текст внутри `{…}` — явный красный (виден поверх цвета Tally); скобки — цвет текста вопроса */
 function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
   const normalized = sanitizeTallyTextLeak(normalizeCurlyBraceChars(text))
   const hasCurly = normalized.includes("{") && normalized.includes("}")
@@ -227,7 +197,6 @@ function renderCurlyBraceInnerRed(text: string, keyPrefix: string): ReactNode {
   return parts.length > 0 ? <>{parts}</> : text
 }
 
-/** Заголовок Q2 (маркетплейсы): русский + типичная узбекская латиница в Tally */
 const Q2_MARKETPLACE_TITLE_FRAGMENTS = [
   "какими онлайн-маркетплейсами",
   "онлайн-маркетплейс",
@@ -237,7 +206,6 @@ const Q2_MARKETPLACE_TITLE_FRAGMENTS = [
   "qaysi onlayn",
 ] as const
 
-/** Заголовок Q3 («чаще всего»): русский + узбекские формулировки */
 const Q3_FREQUENCY_TITLE_FRAGMENTS = [
   "b3.",
   "чаще всего",
@@ -354,7 +322,6 @@ function limitP2PTransferOptions(question: Question, previousQuestion: Question 
   }
 }
 
-/** Q2: по тексту вопроса или единственный чекбокс с полем «другой» и несколькими вариантами */
 function resolveMarketplaceQ2(questions: Question[]): Question | undefined {
   const byTitle = questions.find(
     (q) =>
@@ -374,7 +341,6 @@ function resolveMarketplaceQ2(questions: Question[]): Question | undefined {
   return undefined
 }
 
-/** Индекс Q3: первый multiple_choice после Q2, иначе по заголовку */
 function resolveFrequencyQ3Index(questions: Question[], q2: Question | undefined): number {
   if (q2) {
     const i2 = questions.indexOf(q2)
@@ -388,7 +354,6 @@ function resolveFrequencyQ3Index(questions: Question[], q2: Question | undefined
   )
 }
 
-/** Перемешивание вариантов Q2; последний в списке (обычно «Другой») всегда в конце */
 function shuffleOptionsKeepLast(options: QuestionOption[]): QuestionOption[] {
   if (options.length <= 1) return options.slice()
   const head = options.slice(0, -1)
@@ -400,7 +365,6 @@ function shuffleOptionsKeepLast(options: QuestionOption[]): QuestionOption[] {
   return [...head, last]
 }
 
-/** Как в Tally: варианты из lockInPlace не трогаем, остальные перемешиваем; зафиксированные — в конце в исходном порядке */
 function shuffleOptionsWithLocks(options: QuestionOption[], lockUuids: Set<string>): QuestionOption[] {
   const movable: QuestionOption[] = []
   const locked: QuestionOption[] = []
@@ -415,7 +379,6 @@ function shuffleOptionsWithLocks(options: QuestionOption[], lockUuids: Set<strin
   return [...movable, ...locked]
 }
 
-// ─── Загрузка аудио с retry ──────────────────────────────────
 async function uploadAudioWithRetry(
   sessionId: string,
   blob: Blob,
@@ -463,7 +426,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const uploadPromisesRef = useRef<Promise<any>[]>([])
-  // ✅ FIX: локальное хранение чанков для fallback при завершении
   const audioChunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
@@ -473,19 +435,16 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const visibleQuestionsRef = useRef<Question[]>([])
   const logicEngineRef = useRef<TallyLogicEngine | null>(null)
 
-  // ─── Sync logicEngine state to ref so finishRecording always has latest ──
   useEffect(() => {
     logicEngineRef.current = logicEngine
   }, [logicEngine])
 
-  // ─── Answers o'zgarganda logic qayta hisoblash ──────────────
   useEffect(() => {
     if (!logicEngine) return
     const result = logicEngine.evaluate(answers)
     setLogicResult(result)
   }, [answers, logicEngine])
 
-  // ─── Q3: только выбранные в Q2; «Другой» → текст респондента ─
   const questionsResolved = useMemo(() => {
     const limitedQuestions = questions.map((question, index) =>
       limitP2PTransferOptions(question, questions[index - 1], answers)
@@ -493,7 +452,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     let q2 = resolveMarketplaceQ2(limitedQuestions)
     let q3Index = resolveFrequencyQ3Index(limitedQuestions, q2)
 
-    // Fallback: if Q2 not found by title but Q3 found, use last checkbox with "Другой" before Q3
     if (!q2 && q3Index !== -1) {
       const candidates = limitedQuestions
         .slice(0, q3Index)
@@ -538,7 +496,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     )
   }, [questions, answers, locale])
 
-  // ─── Q2 (маркетплейсы): случайный порядок; учитываем Tally lockInPlace или последний вариант ─
   const marketplaceQ2OptionOrder = useMemo(() => {
     const q2 = resolveMarketplaceQ2(questionsResolved)
     if (!q2?.options?.length) return null
@@ -561,10 +518,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     }
   }, [questionsResolved])
 
-  // ─── Visible questions (yashirilmaganlar) ──────────────────
   const _otherInputIds = new Set(questionsResolved.filter(q => q.otherInputGroupId).map(q => q.otherInputGroupId!))
 
-  // @B3 dynamic questions: hide if B3 = fixed brand (Click/Payme/Uzum Bank)
   const _b3Q = questionsResolved.find(q3 => titleMatchesAnyFragment(q3.title, Q3_FREQUENCY_TITLE_FRAGMENTS))
   const _b3SelUuid = _b3Q ? answers[_b3Q.id] : undefined
   const _b3SelText = (_b3Q?.options?.find(o => o.uuid === _b3SelUuid)?.text ?? String(_b3SelUuid ?? "")).toLowerCase()
@@ -573,7 +528,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const visibleQuestions = questionsResolved.filter((q) => {
     if (logicResult.hiddenGroupUuids.has(q.id)) return false
     if (q.titleGroupId && logicResult.hiddenGroupUuids.has(q.titleGroupId)) return false
-    // Hide @B3 dynamic questions when B3 = fixed brand
     if (_b3IsFixed && (q.title.includes("@B3") || q.title.includes("@b3"))) return false
     if (q.pageBreakGroupId && logicResult.hiddenGroupUuids.has(q.pageBreakGroupId)) return false
     if (q.pageBreakUuid && logicResult.hiddenGroupUuids.has(q.pageBreakUuid)) return false
@@ -589,7 +543,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   answersRef.current = answers
   visibleQuestionsRef.current = visibleQuestions
 
-  // ─── Парсинг блоков Tally ───────────────────────────────────
   const extractTextFromSchema = (schema: any): string => {
     if (!schema) return ""
     if (typeof schema === "string") return schema
@@ -765,9 +718,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const parseTallyBlocks = (blocks: any[]): Question[] => {
     const skipTypes = new Set(["FORM_TITLE", "PAGE_BREAK", "HEADING_2", "CONDITIONAL_LOGIC", "HIDDEN_FIELDS"])
 
-    // Tally sometimes stores only a short visual TITLE like "NPS1.",
-    // while the full question text is duplicated inside CONDITIONAL_LOGIC field.title.
-    // Example: NPS1. (если 0-6) Что вам не понравилось? ...
     const fieldTitleByGroupUuid = new Map<string, string>()
     for (const block of blocks) {
       const conditionals = block?.payload?.conditionals
@@ -800,8 +750,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       return fallbackTitle
     }
 
-    // Build section heading map: each block index → the active section heading at that point.
-    // PAGE_BREAK resets the heading; HEADING_2 and TITLE(groupType!="QUESTION") set it.
     let _activeSectionHeading: string | undefined = undefined
     const sectionHeadingAtIndex: (string | undefined)[] = blocks.map((b: any) => {
       if (b.type === "PAGE_BREAK") {
@@ -832,7 +780,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         const titleBlockIndex = blocks.indexOf(titleBlock)
         const contextHeading = sectionHeadingAtIndex[titleBlockIndex]
 
-        // Найти ближайший PAGE_BREAK перед этим TITLE — его uuid/groupUuid используется для скрытия страницы
         let pageBreakGroupId: string | undefined
         let pageBreakUuid: string | undefined
         for (let pi = titleBlockIndex - 1; pi >= 0; pi--) {
@@ -923,43 +870,31 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             ? lockRaw.filter((u: unknown) => typeof u === "string")
             : undefined
 
-          const allInputTextBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
+          const allInputs = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT" || b.type === "INPUT_LONG_TEXT" || b.type === "INPUT_FIELD");
 
-          const otherOption = options.find((o) => {
+          const otherOptionBlock = options.find((o) => {
             const t = o.text.toLowerCase().trim()
-            return t === "boshqa" || t === "другой" || t === "other" ||
-              t === "другой [записать]" || t === "boshqa [yozib oling]" ||
-              (/^(boshqa|другой|other)[\s\[\(]/.test(t) && t.length <= 30)
+            return t === "boshqa" || t === "другой" || t === "other" || t.includes("другой [") || t.includes("boshqa [") || t.includes("other [");
           })
 
-          const specifyOption = options.find((o) => {
-            if (o.uuid === otherOption?.uuid) return false
-            const t = o.text.toLowerCase()
-            return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(specify") || t.includes("(yozing")
-              || t.includes("укажите какую") || t.includes("укажите какой") || t.includes("укажите какие")
-              || t.includes("конкретную функцию") || t.includes("aniq bir funksiya")
-              || t.includes("konkret funksiya") || t.includes("qaysi funksiya")
+          const specifyOptionBlock = options.find((o) => {
+            if (o.uuid === otherOptionBlock?.uuid) return false;
+            const t = o.text.toLowerCase();
+            return t.includes("укажите") || t.includes("qaysi") || t.includes("функци") || t.includes("funksiya") || t.includes("specify");
           })
 
-          const inputTextBlock = allInputTextBlocks.find((b: any) => {
-             const label = (b.payload?.text || b.text || "").toLowerCase();
-             return !label || label.includes("записать") || label.includes("respondent") || label.includes("yozing") || label.includes("boshqa");
-          }) || allInputTextBlocks[0]
+          const otherInputBlock = allInputs.find((b: any) => {
+             const lbl = (b.payload?.text || b.text || "").toLowerCase();
+             return lbl.includes("записать") || lbl.includes("respondent") || lbl.includes("yozing") || lbl.includes("boshqa");
+          });
 
-          const specifyInputTextBlock = allInputTextBlocks.length > 0
-            ? (allInputTextBlocks.find((b: any) => b.uuid !== inputTextBlock?.uuid) ?? allInputTextBlocks[0])
-            : undefined
+          const specifyInputBlock = allInputs.length > 0 ? (allInputs.find((b: any) => b.uuid !== otherInputBlock?.uuid) ?? allInputs[0]) : undefined;
 
-          const checkboxOtherInputGroupId = otherOption && inputTextBlock
-            ? (inputTextBlock.uuid || inputTextBlock.groupUuid)
-            : undefined
-            
-          const specifyInputGroupId = specifyOption && specifyInputTextBlock
-            ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
-            : undefined
+          const otherInputGroupId = otherOptionBlock && otherInputBlock ? (otherInputBlock.uuid || otherInputBlock.groupUuid) : undefined;
+          const specifyInputGroupId = specifyOptionBlock && specifyInputBlock ? (specifyInputBlock.uuid || specifyInputBlock.groupUuid) : undefined;
 
           const lockSet = new Set<string>(checkboxLockUuids ?? [])
-          if (otherOption) lockSet.add(otherOption.uuid)
+          if (otherOptionBlock) lockSet.add(otherOptionBlock.uuid)
           const shuffledOptions = lockSet.size > 0
             ? shuffleOptionsWithLocks(options, lockSet)
             : shuffleOptionsKeepLast(options)
@@ -976,10 +911,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             options: shuffledOptions,
             multiple: true,
             required: titleBlock.payload?.isRequired === true,
-            otherOptionUuid: otherOption?.uuid,
-            otherInputGroupId: checkboxOtherInputGroupId,
-            specifyOptionUuid: specifyOption?.uuid,
-            specifyInputGroupId,
+            otherOptionUuid: otherOptionBlock?.uuid,
+            otherInputGroupId: otherInputGroupId,
+            specifyOptionUuid: specifyOptionBlock?.uuid,
+            specifyInputGroupId: specifyInputGroupId,
             checkboxLockUuids,
           }
         }
@@ -996,43 +931,31 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             .filter((o) => o.text)
           const groupId = choiceOptionBlocks[0]?.groupUuid || titleBlock.groupUuid
 
-          const allMcInputTextBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
+          const allInputs = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT" || b.type === "INPUT_LONG_TEXT" || b.type === "INPUT_FIELD");
 
-          const mcOtherOption = options.find((o) => {
+          const otherOptionBlock = options.find((o) => {
             const t = o.text.toLowerCase().trim()
-            return t === "boshqa" || t === "другой" || t === "other" ||
-              t === "другой [записать]" || t === "boshqa [yozib oling]" ||
-              (/^(boshqa|другой|other)[\s\[\(]/.test(t) && t.length <= 30)
+            return t === "boshqa" || t === "другой" || t === "other" || t.includes("другой [") || t.includes("boshqa [") || t.includes("other [");
           })
 
-          const mcSpecifyOption = options.find((o) => {
-            if (o.uuid === mcOtherOption?.uuid) return false
-            const t = o.text.toLowerCase()
-            return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(specify") || t.includes("(yozing")
-              || t.includes("укажите какую") || t.includes("укажите какой") || t.includes("укажите какие")
-              || t.includes("конкретную функцию") || t.includes("aniq bir funksiya")
-              || t.includes("konkret funksiya") || t.includes("qaysi funksiya")
+          const specifyOptionBlock = options.find((o) => {
+            if (o.uuid === otherOptionBlock?.uuid) return false;
+            const t = o.text.toLowerCase();
+            return t.includes("укажите") || t.includes("qaysi") || t.includes("функци") || t.includes("funksiya") || t.includes("specify");
           })
 
-          const mcInputTextBlock = allMcInputTextBlocks.find((b: any) => {
-             const label = (b.payload?.text || b.text || "").toLowerCase();
-             return !label || label.includes("записать") || label.includes("respondent") || label.includes("yozing") || label.includes("boshqa");
-          }) || allMcInputTextBlocks[0]
+          const otherInputBlock = allInputs.find((b: any) => {
+             const lbl = (b.payload?.text || b.text || "").toLowerCase();
+             return lbl.includes("записать") || lbl.includes("respondent") || lbl.includes("yozing") || lbl.includes("boshqa");
+          });
 
-          const mcSpecifyInputTextBlock = allMcInputTextBlocks.length > 0
-            ? (allMcInputTextBlocks.find((b: any) => b.uuid !== mcInputTextBlock?.uuid) ?? allMcInputTextBlocks[0])
-            : undefined
+          const specifyInputBlock = allInputs.length > 0 ? (allInputs.find((b: any) => b.uuid !== otherInputBlock?.uuid) ?? allInputs[0]) : undefined;
 
-          const mcOtherInputGroupId = mcOtherOption && mcInputTextBlock
-            ? (mcInputTextBlock.uuid || mcInputTextBlock.groupUuid)
-            : undefined
-            
-          const mcSpecifyInputGroupId = mcSpecifyOption && mcSpecifyInputTextBlock
-            ? (mcSpecifyInputTextBlock.uuid || mcSpecifyInputTextBlock.groupUuid)
-            : undefined
+          const otherInputGroupId = otherOptionBlock && otherInputBlock ? (otherInputBlock.uuid || otherInputBlock.groupUuid) : undefined;
+          const specifyInputGroupId = specifyOptionBlock && specifyInputBlock ? (specifyInputBlock.uuid || specifyInputBlock.groupUuid) : undefined;
 
           const mcLockSet = new Set<string>()
-          if (mcOtherOption) mcLockSet.add(mcOtherOption.uuid)
+          if (otherOptionBlock) mcLockSet.add(otherOptionBlock.uuid)
           const mcShuffled = mcLockSet.size > 0
             ? shuffleOptionsWithLocks(options, mcLockSet)
             : shuffleOptionsKeepLast(options)
@@ -1048,10 +971,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             type: "multiple_choice",
             options: mcShuffled,
             required: titleBlock.payload?.isRequired === true,
-            otherOptionUuid: mcOtherOption?.uuid,
-            otherInputGroupId: mcOtherInputGroupId,
-            specifyOptionUuid: mcSpecifyOption?.uuid,
-            specifyInputGroupId: mcSpecifyInputGroupId,
+            otherOptionUuid: otherOptionBlock?.uuid,
+            otherInputGroupId: otherInputGroupId,
+            specifyOptionUuid: specifyOptionBlock?.uuid,
+            specifyInputGroupId: specifyInputGroupId,
           }
         }
 
@@ -1123,7 +1046,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       .filter((q) => q.title.trim().length > 0)
   }
 
-  // ─── Загрузка вопросов ──────────────────────────────────────
   useEffect(() => {
     const loadQuestions = async () => {
       try {
@@ -1164,18 +1086,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const engine = buildLogicEngine(rawBlocks)
           setLogicEngine(engine)
           logicEngineRef.current = engine
-
-          if (extractedQuestions.length === 0) {
-            const blockTypes = rawBlocks.map((b: any) => `${b.type}/${b.groupType}`).join(", ")
-            console.warn("[RecordingSession] 0 вопросов из", rawBlocks.length, "блоков. Типы:", blockTypes)
-            const titleBlocks = rawBlocks.filter((b: any) => b.type === "TITLE" && b.groupType === "QUESTION")
-            console.warn("[RecordingSession] TITLE+QUESTION блоков:", titleBlocks.length)
-            if (titleBlocks.length > 0) {
-              console.warn("[RecordingSession] Первый TITLE блок:", JSON.stringify(titleBlocks[0]).slice(0, 400))
-            }
-          }
-        } else if (surveyData) {
-          console.warn("[RecordingSession] surveyData получен, но blocks отсутствует. Ключи:", Object.keys(surveyData as object))
         }
       } catch (err: any) {
         console.error("[RecordingSession] Ошибка загрузки вопросов:", err)
@@ -1189,7 +1099,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     loadQuestions()
   }, [survey.id, sessionId, locale])
 
-  // Сброс ответа Q3, если соответствующий вариант снят в Q2
   useEffect(() => {
     const q2 = resolveMarketplaceQ2(questions)
     const q3Index = resolveFrequencyQ3Index(questions, q2)
@@ -1219,7 +1128,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     return renderSchema(schema, mention)
   }
 
-  // ─── Инициализация записи и геолокации ─────────────────────
   useEffect(() => {
     const initializeSession = async () => {
       try {
@@ -1229,7 +1137,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         const tg = (window as any).Telegram?.WebApp
         const lm = tg?.LocationManager
 
-        // Получить позицию через Telegram LocationManager (обходит WKWebView ограничения на iOS)
         const getViaTelegram = (): Promise<{ latitude: number; longitude: number; accuracy: number } | null> => {
           if (!lm) return Promise.resolve(null)
           return new Promise((resolve) => {
@@ -1241,7 +1148,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         }
 
         if (lm) {
-          // iOS Telegram: используем LocationManager
           const loc = await getViaTelegram()
           if (loc) {
             lastPositionRef.current = loc as GeolocationCoordinates
@@ -1249,10 +1155,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             apiClient.updateLocation(sessionId, loc.latitude, loc.longitude, loc.accuracy).catch(() => { })
           } else {
             setGeoStatus(ui.geoPermissionDenied)
-            // Не блокируем — используем сохранённую позицию из подготовки
           }
 
-          // Периодические обновления через LocationManager
           const intervalId = setInterval(async () => {
             const updated = await getViaTelegram()
             if (updated) {
@@ -1263,10 +1167,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }, 30000)
           locationIntervalRef.current = intervalId as any
         } else {
-          // Fallback: стандартный navigator.geolocation
           if (!navigator.geolocation) {
             setGeoStatus(ui.geoUnsupportedShort)
-            // Не блокируем — продолжаем с сохранённой позицией
           } else {
             await new Promise<void>((resolve) => {
               navigator.geolocation.getCurrentPosition(
@@ -1275,9 +1177,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                   navigator.geolocation.getCurrentPosition(
                     () => resolve(),
                     (err) => {
-                      console.warn("[RecordingSession] geolocation precheck failed:", err)
                       setGeoStatus(ui.geoDeniedShort)
-                      // Не ставим setError — сессия уже создана с координатами
                       resolve()
                     },
                     { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
@@ -1324,7 +1224,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
-        // ✅ FIX: микрофон блокирует сессию так же как геолокация
         let stream: MediaStream
         try {
           stream = await Promise.race([
@@ -1343,11 +1242,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               : "Доступ к микрофону запрещён. Разрешите доступ в настройках браузера и попробуйте снова.")
             : (err?.message || ui.initError)
 
-
           setMicStatus(locale === "uz" ? "Mikrofon: ruxsat yo'q" : "Микрофон: нет доступа")
           setError(msg)
           setLoading(false)
-          return // ✅ блокируем сессию — не открываем опросник
+          return
         }
 
         streamRef.current = stream
@@ -1358,9 +1256,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
-            // ✅ FIX: сохраняем чанк локально
             audioChunksRef.current.push(event.data)
-            // ✅ FIX: загружаем с retry вместо fire-and-forget
             const uploadPromise = uploadAudioWithRetry(sessionId, event.data, 3)
             uploadPromisesRef.current.push(uploadPromise)
           }
@@ -1396,7 +1292,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   const startRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "inactive") {
-      // ✅ FIX: 5000мс вместо 10000 — меньше потерь при обрыве сети
       mediaRecorderRef.current.start(5000)
       setIsRecording(true)
       timerRef.current = setInterval(() => setDuration((prev) => prev + 1), 1000)
@@ -1418,7 +1313,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         setIsRecording(false)
       }
 
-      // ✅ FIX: проверяем результаты — если были ошибки, отправляем весь аудио целиком
       const results = await Promise.allSettled(uploadPromisesRef.current)
       uploadPromisesRef.current = []
 
@@ -1437,13 +1331,10 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       if (lastPositionRef.current) {
         position = lastPositionRef.current
       } else {
-        // Fallback 1: сохранённые координаты из подготовки
         const stored = storage.getLastPosition()
         if (stored) {
-          console.warn("[RecordingSession] finishRecording: используем сохранённую позицию")
           position = { latitude: stored.lat, longitude: stored.lng, accuracy: stored.acc }
         } else {
-          // Fallback 2: попытка через navigator.geolocation
           try {
             position = await new Promise<GeolocationCoordinates>((resolve, reject) => {
               if (!navigator.geolocation) { reject(new Error(ui.geoNotSupportedThrow)); return }
@@ -1455,8 +1346,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               )
             })
           } catch {
-            // Последний резерв — нули (сессия всё равно завершится)
-            console.error("[RecordingSession] finishRecording: координаты недоступны, используем 0,0")
             position = { latitude: 0, longitude: 0, accuracy: 0 }
           }
         }
@@ -1465,7 +1354,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       const snapshotAnswers = answersRef.current
       let snapshotVisible = visibleQuestionsRef.current
 
-      // Re-evaluate logic with final answers — guards against stale visibleQuestionsRef
       const finalEngine = logicEngineRef.current
       if (finalEngine) {
         const finalHidden = finalEngine.evaluate(snapshotAnswers).hiddenGroupUuids
@@ -1582,8 +1470,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
   const handleAnswer = (questionId: string, value: any) => {
     const newAnswers = { ...answers, [questionId]: value }
-    // Tally logic conditions reference questions by TITLE block groupUuid (titleGroupId),
-    // but answers are stored under option block groupUuid (q.id). Mirror to make conditions work.
     const answeredQ = questionsResolved.find(q => q.id === questionId)
     if (answeredQ?.titleGroupId && answeredQ.titleGroupId !== questionId) {
       newAnswers[answeredQ.titleGroupId] = value
@@ -1601,7 +1487,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       setLogicResult(newResult)
 
       if (newResult.jumpToPageUuid && !isOtherSelected) {
-        // JUMP_TO_PAGE always means end-of-path for this respondent (quota/screening or real end)
         setShowFinishConfirm(true)
         return
       }
@@ -1618,7 +1503,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       !["text", "number", "multi_text"].includes(currentQuestion?.type ?? "") &&
       answeredForFinish
     ) {
-      // compute visibleQuestions with the NEW logic result (not stale state)
       const newVisible = questionsResolved.filter((q) => {
         if (newResult.hiddenGroupUuids.has(q.id)) return false
         if (q.type === "multi_text" && q.subFields) {
@@ -1665,14 +1549,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   const currentQuestion = visibleQuestions[currentQuestionIndex]
   const isLastVisible = currentQuestionIndex === visibleQuestions.length - 1
 
-const scaleAnswered =
-  currentQuestion?.type === "linear_scale" &&
-  answers[currentQuestion.id] !== undefined &&
-  answers[currentQuestion.id] !== null &&
-  answers[currentQuestion.id] !== ""
+  const scaleAnswered =
+    currentQuestion?.type === "linear_scale" &&
+    answers[currentQuestion.id] !== undefined &&
+    answers[currentQuestion.id] !== null &&
+    answers[currentQuestion.id] !== ""
 
-  // Для inline follow-up фильтруем с актуальным logicResult (уже обновлён в handleAnswer)
-const visibleForFollowUp = questionsResolved.filter((q) => {
+  const visibleForFollowUp = questionsResolved.filter((q) => {
     if (logicResult.hiddenGroupUuids.has(q.id)) return false
     if (q.type === "multi_text" && q.subFields) {
       if (logicResult.hiddenGroupUuids.has(q.id)) return false
@@ -1733,7 +1616,6 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
 
     if (!answered) return false
 
-    // If there's an inline follow-up, require it to be filled too
     if (inlineFollowUp) {
       const fv = answers[inlineFollowUp.id]
       if (!fv || (typeof fv === "string" && fv.trim().length === 0)) return false
@@ -1752,9 +1634,11 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
       }
     }
 
-    // Require specifyInputGroupId to be filled when specifyOptionUuid is selected
     if (currentQuestion.specifyOptionUuid && currentQuestion.specifyInputGroupId) {
-      const isSpecifySelected = currentQuestion.type === "multiple_choice" ? answers[currentQuestion.id] === currentQuestion.specifyOptionUuid : (Array.isArray(answers[currentQuestion.id]) && (answers[currentQuestion.id] as string[]).includes(currentQuestion.specifyOptionUuid))
+      const isSpecifySelected = currentQuestion.type === "multiple_choice"
+        ? answers[currentQuestion.id] === currentQuestion.specifyOptionUuid
+        : Array.isArray(answers[currentQuestion.id]) && (answers[currentQuestion.id] as string[]).includes(currentQuestion.specifyOptionUuid)
+      
       if (isSpecifySelected) {
         const specifyText = answers[currentQuestion.specifyInputGroupId]
         if (!specifyText || String(specifyText).trim() === "") return false
@@ -1767,18 +1651,15 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
   const handleNext = () => {
     if (!canGoNext) return
 
-    // If quota/screening rule fired, never advance — re-show finish dialog
     if (logicResult.jumpToPageUuid) {
       setShowFinishConfirm(true)
       return
     }
 
-    // Skip inline follow-up (already answered on this screen)
     const step = inlineFollowUp ? 2 : 1
     if (currentQuestionIndex + step < visibleQuestions.length) {
       setCurrentQuestionIndex((prev) => prev + step)
     } else if (inlineFollowUp) {
-      // inline follow-up was the last question → finish
       setShowFinishConfirm(true)
     }
   }
@@ -1917,9 +1798,7 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                         <label
                           key={option.uuid}
                           className="flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer active:bg-muted/70 transition-colors"
-                          style={{
-                            borderColor: isSelected ? "hsl(var(--primary))" : undefined,
-                          }}
+                          style={{ borderColor: isSelected ? "hsl(var(--primary))" : undefined }}
                         >
                           <input
                             type="radio"
@@ -1932,14 +1811,12 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                           <span className="flex-1 text-sm break-words">
                             {renderCurlyBraceInnerRed(option.text, `mc-${option.uuid}-`)}
                           </span>
-                          {isSelected && (
-                            <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                          )}
+                          {isSelected && <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />}
                         </label>
                       )
                     })}
                 </div>
-                
+
                 {answers[currentQuestion.id] === currentQuestion.specifyOptionUuid && currentQuestion.specifyInputGroupId && (
                   <input
                     type="text"
@@ -1954,7 +1831,7 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                     className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   />
                 )}
-                
+
                 {answers[currentQuestion.id] === currentQuestion.otherOptionUuid && currentQuestion.otherInputGroupId && (
                   <input
                     type="text"
@@ -2019,10 +1896,8 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                   .filter((o): o is QuestionOption => !!o && !logicResult.hiddenGroupUuids.has(o.uuid))
                 : opts.filter((option: QuestionOption) => !logicResult.hiddenGroupUuids.has(option.uuid))
               )
-              const selected: string[] = Array.isArray(answers[currentQuestion.id])
-                ? answers[currentQuestion.id]
-                : []
-                
+              const selected: string[] = Array.isArray(answers[currentQuestion.id]) ? answers[currentQuestion.id] : []
+              
               return (
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -2048,7 +1923,7 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                       )
                     })}
                   </div>
-                  
+
                   {currentQuestion.specifyOptionUuid && selected.includes(currentQuestion.specifyOptionUuid) && currentQuestion.specifyInputGroupId && (
                     <input
                       type="text"
@@ -2063,7 +1938,7 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                       className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                     />
                   )}
-                  
+
                   {currentQuestion.otherOptionUuid && selected.includes(currentQuestion.otherOptionUuid) && currentQuestion.otherInputGroupId && (
                     <input
                       type="text"
@@ -2190,7 +2065,6 @@ const visibleForFollowUp = questionsResolved.filter((q) => {
                       const newVal = e.target.value
                       setAnswers((prev) => {
                         const updated = { ...prev, [field.id]: newVal }
-                        // sync question.id so conditional logic (IS_NOT_EMPTY) sees this answer
                         const firstFilled = currentQuestion.subFields!
                           .map((f) => (f.id === field.id ? newVal : String(prev[f.id] ?? "")))
                           .find((v) => v.trim().length > 0) ?? ""
