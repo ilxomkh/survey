@@ -924,39 +924,35 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             : undefined
 
           const _allItBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
-          // "other/boshqa" input: labeled "записать"/"respondent"/"yozing", or last INPUT_TEXT
-          const inputTextBlock = _allItBlocks.find((b: any) => {
-            const label = (b.payload?.text || b.payload?.placeholder || b.text || "").toLowerCase()
-            return label.includes("записать") || label.includes("respondent") || label.includes("yozing")
-          }) ?? (_allItBlocks.length > 0 ? _allItBlocks[_allItBlocks.length - 1] : undefined)
           const otherOptionBlock = optionBlocks.find((b: any) => {
             const t = (b.payload?.text || "").toLowerCase().trim()
             return t === "boshqa" || t === "другой" || t === "other" ||
               t === "другой [записать]" || t === "boshqa [yozib oling]" ||
               (/^(boshqa|другой|other)[\s\[\(]/.test(t) && t.length <= 30)
           })
-          const checkboxOtherInputGroupId = otherOptionBlock && inputTextBlock
-            ? (inputTextBlock.uuid || inputTextBlock.groupUuid)
-            : undefined
-
-          // Detect secondary "specify" option: (укажите какую), (qaysi?), etc.
           const specifyOptionBlock = optionBlocks.find((b: any) => {
             if (b.uuid === otherOptionBlock?.uuid) return false
-            // payload.text OR safeHTMLSchema (some options store text in schema)
             const t = (b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "").toLowerCase()
-            return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(qaysi ") || t.includes("(specify")
-              || t.includes("укажите какую") || t.includes("укажите какой") || t.includes("укажите какие")
+            return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(qaysi ")
+              || t.includes("укажите какую") || t.includes("укажите какой")
+              || t.includes("укажите какие") || t.includes("укажите какая")
               || t.includes("конкретную функцию") || t.includes("aniq bir funksiya")
               || t.includes("konkret funksiya") || t.includes("kerak bo")
               || (t.includes("funksiya") && t.includes("("))
               || (t.includes("функци") && t.includes("("))
           })
-          // specify input = first INPUT_TEXT that is different from the "other" input
+          const inputTextBlock = _allItBlocks.find((b: any) => {
+            const label = (b.payload?.text || b.payload?.placeholder || b.text || "").toLowerCase()
+            return label.includes("записать") || label.includes("respondent") || label.includes("yozing")
+          }) ?? (_allItBlocks.length >= 2 ? _allItBlocks[_allItBlocks.length - 1] : (otherOptionBlock && !specifyOptionBlock ? _allItBlocks[0] : undefined))
+          const checkboxOtherInputGroupId = otherOptionBlock && inputTextBlock
+            ? (inputTextBlock.uuid || inputTextBlock.groupUuid)
+            : undefined
           const specifyInputTextBlock = _allItBlocks.find((b: any) => b.uuid !== inputTextBlock?.uuid)
+            ?? (_allItBlocks.length > 0 && !inputTextBlock ? _allItBlocks[0] : undefined)
           const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock
             ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
             : undefined
-
           const lockSet = new Set<string>(checkboxLockUuids ?? [])
           if (otherOptionBlock) lockSet.add(otherOptionBlock.uuid)
           const shuffledOptions = lockSet.size > 0
