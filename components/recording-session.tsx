@@ -923,7 +923,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             ? lockRaw.filter((u: unknown) => typeof u === "string")
             : undefined
 
-          const inputTextBlock = siblingBlocks.find((b: any) => { if (b.type !== "INPUT_TEXT") return false; const label = (b.payload?.text || b.text || "").toLowerCase(); return !label || label.includes("записать") || label.includes("respondent") || label.includes("yozing") || label.includes("boshqa"); })
+          const _allItBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
+          // "other/boshqa" input: labeled "записать"/"respondent"/"yozing", or last INPUT_TEXT
+          const inputTextBlock = _allItBlocks.find((b: any) => {
+            const label = (b.payload?.text || b.payload?.placeholder || b.text || "").toLowerCase()
+            return label.includes("записать") || label.includes("respondent") || label.includes("yozing")
+          }) ?? (_allItBlocks.length > 0 ? _allItBlocks[_allItBlocks.length - 1] : undefined)
           const otherOptionBlock = optionBlocks.find((b: any) => {
             const t = (b.payload?.text || "").toLowerCase().trim()
             return t === "boshqa" || t === "другой" || t === "other" ||
@@ -937,20 +942,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           // Detect secondary "specify" option: (укажите какую), (qaysi?), etc.
           const specifyOptionBlock = optionBlocks.find((b: any) => {
             if (b.uuid === otherOptionBlock?.uuid) return false
-            const t = (b.payload?.text || "").toLowerCase()
-            return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(specify") || t.includes("(yozing")
+            // payload.text OR safeHTMLSchema (some options store text in schema)
+            const t = (b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "").toLowerCase()
+            return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(qaysi ") || t.includes("(specify")
               || t.includes("укажите какую") || t.includes("укажите какой") || t.includes("укажите какие")
               || t.includes("конкретную функцию") || t.includes("aniq bir funksiya")
-              || t.includes("konkret funksiya") || t.includes("qaysi funksiya")
+              || t.includes("konkret funksiya") || t.includes("kerak bo")
+              || (t.includes("funksiya") && t.includes("("))
+              || (t.includes("функци") && t.includes("("))
           })
-          const allInputTextBlocks2 = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
-          // Find specify input by uuid (groupUuid can be shared with "other" block)
-          // specify input = any INPUT_TEXT that is NOT the "other" input;
-          // if inputTextBlock is undefined (no "other"), take the first INPUT_TEXT;
-          // if two inputs exist and inputTextBlock is the first, take the second.
-          const specifyInputTextBlock = allInputTextBlocks2.length > 0
-            ? (allInputTextBlocks2.find((b: any) => b.uuid !== inputTextBlock?.uuid) ?? allInputTextBlocks2[0])
-            : undefined
+          // specify input = first INPUT_TEXT that is different from the "other" input
+          const specifyInputTextBlock = _allItBlocks.find((b: any) => b.uuid !== inputTextBlock?.uuid)
           const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock
             ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
             : undefined
