@@ -923,40 +923,43 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             ? lockRaw.filter((u: unknown) => typeof u === "string")
             : undefined
 
-          const inputTextBlock = siblingBlocks.find((b: any) => { if (b.type !== "INPUT_TEXT") return false; const label = (b.payload?.text || b.text || "").toLowerCase(); return !label || label.includes("записать") || label.includes("respondent") || label.includes("yozing") || label.includes("boshqa"); })
-          const otherOptionBlock = optionBlocks.find((b: any) => {
-            const t = (b.payload?.text || "").toLowerCase().trim()
+          const allInputTextBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
+
+          const otherOption = options.find((o) => {
+            const t = o.text.toLowerCase().trim()
             return t === "boshqa" || t === "другой" || t === "other" ||
               t === "другой [записать]" || t === "boshqa [yozib oling]" ||
               (/^(boshqa|другой|other)[\s\[\(]/.test(t) && t.length <= 30)
           })
-          const checkboxOtherInputGroupId = otherOptionBlock && inputTextBlock
-            ? (inputTextBlock.uuid || inputTextBlock.groupUuid)
-            : undefined
 
-          // Detect secondary "specify" option: (укажите какую), (qaysi?), etc.
-          const specifyOptionBlock = optionBlocks.find((b: any) => {
-            if (b.uuid === otherOptionBlock?.uuid) return false
-            const t = (b.payload?.text || "").toLowerCase()
+          const specifyOption = options.find((o) => {
+            if (o.uuid === otherOption?.uuid) return false
+            const t = o.text.toLowerCase()
             return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(specify") || t.includes("(yozing")
               || t.includes("укажите какую") || t.includes("укажите какой") || t.includes("укажите какие")
               || t.includes("конкретную функцию") || t.includes("aniq bir funksiya")
               || t.includes("konkret funksiya") || t.includes("qaysi funksiya")
           })
-          const allInputTextBlocks2 = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
-          // Find specify input by uuid (groupUuid can be shared with "other" block)
-          // specify input = any INPUT_TEXT that is NOT the "other" input;
-          // if inputTextBlock is undefined (no "other"), take the first INPUT_TEXT;
-          // if two inputs exist and inputTextBlock is the first, take the second.
-          const specifyInputTextBlock = allInputTextBlocks2.length > 0
-            ? (allInputTextBlocks2.find((b: any) => b.uuid !== inputTextBlock?.uuid) ?? allInputTextBlocks2[0])
+
+          const inputTextBlock = allInputTextBlocks.find((b: any) => {
+             const label = (b.payload?.text || b.text || "").toLowerCase();
+             return !label || label.includes("записать") || label.includes("respondent") || label.includes("yozing") || label.includes("boshqa");
+          }) || allInputTextBlocks[0]
+
+          const specifyInputTextBlock = allInputTextBlocks.length > 0
+            ? (allInputTextBlocks.find((b: any) => b.uuid !== inputTextBlock?.uuid) ?? allInputTextBlocks[0])
             : undefined
-          const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock
+
+          const checkboxOtherInputGroupId = otherOption && inputTextBlock
+            ? (inputTextBlock.uuid || inputTextBlock.groupUuid)
+            : undefined
+            
+          const specifyInputGroupId = specifyOption && specifyInputTextBlock
             ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
             : undefined
 
           const lockSet = new Set<string>(checkboxLockUuids ?? [])
-          if (otherOptionBlock) lockSet.add(otherOptionBlock.uuid)
+          if (otherOption) lockSet.add(otherOption.uuid)
           const shuffledOptions = lockSet.size > 0
             ? shuffleOptionsWithLocks(options, lockSet)
             : shuffleOptionsKeepLast(options)
@@ -973,9 +976,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             options: shuffledOptions,
             multiple: true,
             required: titleBlock.payload?.isRequired === true,
-            otherOptionUuid: otherOptionBlock?.uuid,
+            otherOptionUuid: otherOption?.uuid,
             otherInputGroupId: checkboxOtherInputGroupId,
-            specifyOptionUuid: specifyOptionBlock?.uuid,
+            specifyOptionUuid: specifyOption?.uuid,
             specifyInputGroupId,
             checkboxLockUuids,
           }
@@ -993,32 +996,43 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             .filter((o) => o.text)
           const groupId = choiceOptionBlocks[0]?.groupUuid || titleBlock.groupUuid
 
-          const mcInputTextBlock = siblingBlocks.find((b: any) => b.type === "INPUT_TEXT")
-          const mcOtherOptionBlock = choiceOptionBlocks.find((b: any) => {
-            const t = (b.payload?.text || "").toLowerCase().trim()
+          const allMcInputTextBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
+
+          const mcOtherOption = options.find((o) => {
+            const t = o.text.toLowerCase().trim()
             return t === "boshqa" || t === "другой" || t === "other" ||
               t === "другой [записать]" || t === "boshqa [yozib oling]" ||
               (/^(boshqa|другой|other)[\s\[\(]/.test(t) && t.length <= 30)
           })
 
-          const mcSpecifyOptionBlock = choiceOptionBlocks.find((b: any) => {
-            if (b.uuid === mcOtherOptionBlock?.uuid) return false
-            const t = (b.payload?.text || "").toLowerCase()
+          const mcSpecifyOption = options.find((o) => {
+            if (o.uuid === mcOtherOption?.uuid) return false
+            const t = o.text.toLowerCase()
             return t.includes("(укажите") || t.includes("(qaysi?") || t.includes("(specify") || t.includes("(yozing")
               || t.includes("укажите какую") || t.includes("укажите какой") || t.includes("укажите какие")
               || t.includes("конкретную функцию") || t.includes("aniq bir funksiya")
               || t.includes("konkret funksiya") || t.includes("qaysi funksiya")
           })
-          const allMcInputTextBlocks = siblingBlocks.filter((b: any) => b.type === "INPUT_TEXT")
+
+          const mcInputTextBlock = allMcInputTextBlocks.find((b: any) => {
+             const label = (b.payload?.text || b.text || "").toLowerCase();
+             return !label || label.includes("записать") || label.includes("respondent") || label.includes("yozing") || label.includes("boshqa");
+          }) || allMcInputTextBlocks[0]
+
           const mcSpecifyInputTextBlock = allMcInputTextBlocks.length > 0
             ? (allMcInputTextBlocks.find((b: any) => b.uuid !== mcInputTextBlock?.uuid) ?? allMcInputTextBlocks[0])
             : undefined
-          const mcSpecifyInputGroupId = mcSpecifyOptionBlock && mcSpecifyInputTextBlock
+
+          const mcOtherInputGroupId = mcOtherOption && mcInputTextBlock
+            ? (mcInputTextBlock.uuid || mcInputTextBlock.groupUuid)
+            : undefined
+            
+          const mcSpecifyInputGroupId = mcSpecifyOption && mcSpecifyInputTextBlock
             ? (mcSpecifyInputTextBlock.uuid || mcSpecifyInputTextBlock.groupUuid)
             : undefined
 
           const mcLockSet = new Set<string>()
-          if (mcOtherOptionBlock) mcLockSet.add(mcOtherOptionBlock.uuid)
+          if (mcOtherOption) mcLockSet.add(mcOtherOption.uuid)
           const mcShuffled = mcLockSet.size > 0
             ? shuffleOptionsWithLocks(options, mcLockSet)
             : shuffleOptionsKeepLast(options)
@@ -1034,9 +1048,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             type: "multiple_choice",
             options: mcShuffled,
             required: titleBlock.payload?.isRequired === true,
-            otherOptionUuid: mcOtherOptionBlock?.uuid,
-            otherInputGroupId: mcOtherOptionBlock && mcInputTextBlock ? (mcInputTextBlock.uuid || mcInputTextBlock.groupUuid) : undefined,
-            specifyOptionUuid: mcSpecifyOptionBlock?.uuid,
+            otherOptionUuid: mcOtherOption?.uuid,
+            otherInputGroupId: mcOtherInputGroupId,
+            specifyOptionUuid: mcSpecifyOption?.uuid,
             specifyInputGroupId: mcSpecifyInputGroupId,
           }
         }
