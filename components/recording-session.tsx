@@ -948,8 +948,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           const checkboxOtherInputGroupId = otherOptionBlock && inputTextBlock
             ? (inputTextBlock.uuid || inputTextBlock.groupUuid)
             : undefined
-          const specifyInputTextBlock = _allItBlocks.find((b: any) => b.uuid !== inputTextBlock?.uuid)
-            ?? (_allItBlocks.length > 0 && !inputTextBlock ? _allItBlocks[0] : undefined)
+          const specifyInputTextBlock = _allItBlocks.find((b: any) => b.uuid !== inputTextBlock?.uuid) ?? _allItBlocks[0]
           const specifyInputGroupId = specifyOptionBlock && specifyInputTextBlock
             ? (specifyInputTextBlock.uuid || specifyInputTextBlock.groupUuid)
             : undefined
