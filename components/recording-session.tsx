@@ -1059,6 +1059,12 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           if (Array.isArray(surveyData.blocks)) {
             rawBlocks = surveyData.blocks
             extractedQuestions = parseTallyBlocks(rawBlocks)
+            const seenIds = new Set<string>()
+            extractedQuestions = extractedQuestions.filter(q => {
+              if (seenIds.has(q.id)) return false
+              seenIds.add(q.id)
+              return true
+            })
           } else if (Array.isArray(surveyData.questions)) {
             extractedQuestions = surveyData.questions
           } else if (Array.isArray(surveyData)) {
