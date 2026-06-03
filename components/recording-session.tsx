@@ -1865,7 +1865,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                         [currentQuestion.specifyInputGroupId!]: e.target.value,
                       }))
                     }
-                    placeholder={questionsResolved.find(q => q.id === currentQuestion.specifyInputGroupId)?.title || ui.placeholderOther}
+                    placeholder={ui.placeholderOther}
                     className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   />
                 )}
@@ -1880,7 +1880,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                         [currentQuestion.otherInputGroupId!]: e.target.value,
                       }))
                     }
-                    placeholder={questionsResolved.find(q => q.id === currentQuestion.otherInputGroupId)?.title || ui.placeholderOther}
+                    placeholder={ui.placeholderOther}
                     className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   />
                 )}
@@ -1972,7 +1972,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                           [currentQuestion.specifyInputGroupId!]: e.target.value,
                         }))
                       }
-                      placeholder={questionsResolved.find(q => q.id === currentQuestion.specifyInputGroupId)?.title || ui.placeholderOther}
+                      placeholder={ui.placeholderOther}
                       className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                     />
                   )}
@@ -1987,7 +1987,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                           [currentQuestion.otherInputGroupId!]: e.target.value,
                         }))
                       }
-                      placeholder={questionsResolved.find(q => q.id === currentQuestion.otherInputGroupId)?.title || ui.placeholderOther}
+                      placeholder={ui.placeholderOther}
                       className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                     />
                   )}
