@@ -512,19 +512,18 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     questionsResolved.flatMap(q => [q.otherInputGroupId, q.specifyInputGroupId]).filter(Boolean) as string[]
   )
 
-  const _b3Q = questionsResolved.find(q3 => titleMatchesAnyFragment(q3.title, Q3_FREQUENCY_TITLE_FRAGMENTS))
-  const _b3SelUuid = _b3Q ? answers[_b3Q.id] : undefined
-  const _b3SelText = (_b3Q?.options?.find(o => o.uuid === _b3SelUuid)?.text ?? String(_b3SelUuid ?? "")).toLowerCase()
-  const _b3IsFixed = Boolean(_b3SelText) && ["click", "payme", "uzum bank"].some(b => _b3SelText.includes(b))
 
   const visibleQuestions = questionsResolved.filter((q) => {
+    // 1. Строго слушаемся логики Tally
     if (logicResult.hiddenGroupUuids.has(q.id)) return false
     if (q.titleGroupId && logicResult.hiddenGroupUuids.has(q.titleGroupId)) return false
-    if (_b3IsFixed && (q.title.includes("@B3") || q.title.includes("@b3"))) return false
     if (q.pageBreakGroupId && logicResult.hiddenGroupUuids.has(q.pageBreakGroupId)) return false
     if (q.pageBreakUuid && logicResult.hiddenGroupUuids.has(q.pageBreakUuid)) return false
+    
+    // 2. Скрываем инпуты, которые мы уже "втянули" внутрь других вопросов
     if (_otherInputIds.has(q.id) && q.type === 'text') return false
     
+    // 3. Защита от дублей: если это просто пустой заголовок инпута, скрываем
     const titleLow = q.title.toLowerCase();
     if (titleLow.startsWith("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.startsWith("respondent javobini")) return false;
     
