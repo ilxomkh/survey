@@ -1060,17 +1060,16 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           if (Array.isArray(surveyData.blocks)) {
             rawBlocks = surveyData.blocks
             extractedQuestions = parseTallyBlocks(rawBlocks)
-            // Дедупликация: по id, по titleGroupId (один NPS блок = одна шкала), по типу+заголовку
+            // Дедупликация: по id (главный ключ — groupId шкалы одинаков у всех NPS-дублей),
+            // по типу+заголовку для остальных дублей
             const seenIds = new Set<string>()
-            const seenTitleGroupIds = new Set<string>()
             const seenTitleKeys = new Set<string>()
             extractedQuestions = extractedQuestions.filter(q => {
+              // Главная дедупликация — по q.id (groupId блока шкалы/инпута)
               if (seenIds.has(q.id)) return false
-              if (q.type === "linear_scale" && q.titleGroupId && seenTitleGroupIds.has(q.titleGroupId)) return false
               const titleKey = `${q.type}::${normalizeSurveyText(q.title)}`
               if (q.title.trim().length > 0 && seenTitleKeys.has(titleKey)) return false
               seenIds.add(q.id)
-              if (q.titleGroupId) seenTitleGroupIds.add(q.titleGroupId)
               seenTitleKeys.add(titleKey)
               return true
             })
