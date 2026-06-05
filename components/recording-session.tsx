@@ -71,19 +71,15 @@ function formatQ3ChoiceAsDisplay(q3: Question | undefined, answersMap: Answers):
   if (!q3) return null
   const v = answersMap[q3.id]
   if (v === undefined || v === null || v === "") return null
-  
-  const getLabel = (val: string) => {
-    if (q3.options) {
-      const opt = q3.options.find((o) => o.uuid === val)
-      if (opt) return opt.text.trim()
-    }
-    return String(val)
+  if (q3.type === "multiple_choice" && q3.options) {
+    const opt = q3.options.find((o) => o.uuid === v)
+    return (opt?.text ?? "").trim() || String(v)
   }
-
-  if (Array.isArray(v)) {
-    return v.map(getLabel).join(", ")
+  if (q3.type === "dropdown" && q3.options) {
+    const opt = q3.options.find((o) => o.uuid === v)
+    return (opt?.text ?? "").trim() || String(v)
   }
-  return getLabel(v)
+  return String(v)
 }
 
 function findQ3FrequencyQuestion(
@@ -224,7 +220,7 @@ const Q3_FREQUENCY_TITLE_FRAGMENTS = [
 function normalizeSurveyText(text: string): string {
   return String(text ?? "")
     .toLowerCase()
-    .replace(/[’‘`´ʻʼ]/g, "'")
+    .replace(/[''`´ʻʼ]/g, "'")
     .replace(/ё/g, "е")
     .replace(/\s*\/\s*/g, "/")
     .replace(/\s+/g, " ")
@@ -516,43 +512,27 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     questionsResolved.flatMap(q => [q.otherInputGroupId, q.specifyInputGroupId]).filter(Boolean) as string[]
   )
 
-  const visibleQuestions = useMemo(() => {
-    const seenTitles = new Set<string>();
 
-    return questionsResolved.filter((q) => {
-      // 1. Tally logic engine
+  const visibleQuestions = questionsResolved.filter((q) => {
+    // 1. Строго слушаемся логики Tally
+    if (logicResult.hiddenGroupUuids.has(q.id)) return false
+    if (q.titleGroupId && logicResult.hiddenGroupUuids.has(q.titleGroupId)) return false
+    if (q.pageBreakGroupId && logicResult.hiddenGroupUuids.has(q.pageBreakGroupId)) return false
+    if (q.pageBreakUuid && logicResult.hiddenGroupUuids.has(q.pageBreakUuid)) return false
+    
+    // 2. Скрываем инпуты, которые мы уже "втянули" внутрь других вопросов
+    if (_otherInputIds.has(q.id) && q.type === 'text') return false
+    
+    // 3. Защита от дублей: если это просто пустой заголовок инпута, скрываем
+    const titleLow = q.title.toLowerCase();
+    if (titleLow.startsWith("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.startsWith("respondent javobini")) return false;
+    
+    if (q.type === "multi_text" && q.subFields) {
       if (logicResult.hiddenGroupUuids.has(q.id)) return false
-      if (q.titleGroupId && logicResult.hiddenGroupUuids.has(q.titleGroupId)) return false
-      if (q.pageBreakGroupId && logicResult.hiddenGroupUuids.has(q.pageBreakGroupId)) return false
-      if (q.pageBreakUuid && logicResult.hiddenGroupUuids.has(q.pageBreakUuid)) return false
-      
-      // 2. Hide specific text inputs that we embedded inside checkboxes
-      if (_otherInputIds.has(q.id) && q.type === 'text') return false
-      
-      // 3. Fallback for stray text questions
-      const titleLow = q.title.toLowerCase();
-      if (titleLow.startsWith("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.startsWith("respondent javobini")) return false;
-      
-      if (q.type === "multi_text" && q.subFields) {
-        if (logicResult.hiddenGroupUuids.has(q.id)) return false
-        if (q.subFields.every((f) => logicResult.hiddenGroupUuids.has(f.id))) return false
-      }
-
-      // --- DEDUPLICATION LOGIC ---
-      const resolvedMention = getAtMentionReplacement(questionsResolved, questionsResolved, answers, q);
-      const renderedTitlePlain = applyAtMentionPlain(q.title, resolvedMention).toLowerCase().replace(/[^a-zа-я0-9]/g, "");
-      
-      if (renderedTitlePlain.length > 15) {
-          if (seenTitles.has(renderedTitlePlain)) {
-              return false; 
-          }
-          seenTitles.add(renderedTitlePlain);
-      }
-
-      return true
-    })
-  }, [questionsResolved, logicResult.hiddenGroupUuids, _otherInputIds, answers]);
-
+      if (q.subFields.every((f) => logicResult.hiddenGroupUuids.has(f.id))) return false
+    }
+    return true
+  })
   answersRef.current = answers
   visibleQuestionsRef.current = visibleQuestions
 
@@ -1041,8 +1021,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           }
         }
 
+        // ПРАВКА 3: используем textBlock.uuid (уникален) вместо groupUuid (может совпадать у соседних блоков)
         const textBlock = allTextBlocks[0] ?? null
-        const groupId = textBlock?.groupUuid || titleBlock.groupUuid
+        const groupId = textBlock?.uuid || textBlock?.groupUuid || titleBlock.groupUuid
         const bestQuestionText = getBestParsedQuestionTitle(questionText, groupId)
         const bestRawSchema = bestQuestionText !== questionText ? null : rawSchema
 
@@ -1079,6 +1060,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           if (Array.isArray(surveyData.blocks)) {
             rawBlocks = surveyData.blocks
             extractedQuestions = parseTallyBlocks(rawBlocks)
+            // ПРАВКА 1: дедупликация по id + по типу+заголовку
+            const seenIds = new Set<string>()
+            const seenTitleKeys = new Set<string>()
+            extractedQuestions = extractedQuestions.filter(q => {
+              if (seenIds.has(q.id)) return false
+              const titleKey = `${q.type}::${normalizeSurveyText(q.title)}`
+              if (q.title.trim().length > 0 && seenTitleKeys.has(titleKey)) return false
+              seenIds.add(q.id)
+              seenTitleKeys.add(titleKey)
+              return true
+            })
           } else if (Array.isArray(surveyData.questions)) {
             extractedQuestions = surveyData.questions
           } else if (Array.isArray(surveyData)) {
@@ -1137,6 +1129,16 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
              }
           }
         }
+
+        // ПРАВКА 2: убираем text-вопросы, "втянутые" внутрь checkbox/multiple_choice
+        const inlinedTextIds = new Set<string>()
+        for (const q of extractedQuestions) {
+          if (q.otherInputGroupId) inlinedTextIds.add(q.otherInputGroupId)
+          if (q.specifyInputGroupId) inlinedTextIds.add(q.specifyInputGroupId)
+        }
+        extractedQuestions = extractedQuestions.filter(q =>
+          !(inlinedTextIds.has(q.id) && q.type === 'text')
+        )
 
         setQuestions(extractedQuestions)
 
@@ -1885,7 +1887,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                         [currentQuestion.specifyInputGroupId!]: e.target.value,
                       }))
                     }
-                    placeholder={questionsResolved.find(q => q.id === currentQuestion.specifyInputGroupId)?.title || ui.placeholderOther}
+                    placeholder={ui.placeholderOther}
                     className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   />
                 )}
@@ -1900,7 +1902,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                         [currentQuestion.otherInputGroupId!]: e.target.value,
                       }))
                     }
-                    placeholder={questionsResolved.find(q => q.id === currentQuestion.otherInputGroupId)?.title || ui.placeholderOther}
+                    placeholder={ui.placeholderOther}
                     className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   />
                 )}
@@ -1992,7 +1994,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                           [currentQuestion.specifyInputGroupId!]: e.target.value,
                         }))
                       }
-                      placeholder={questionsResolved.find(q => q.id === currentQuestion.specifyInputGroupId)?.title || ui.placeholderOther}
+                      placeholder={ui.placeholderOther}
                       className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                     />
                   )}
@@ -2007,7 +2009,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                           [currentQuestion.otherInputGroupId!]: e.target.value,
                         }))
                       }
-                      placeholder={questionsResolved.find(q => q.id === currentQuestion.otherInputGroupId)?.title || ui.placeholderOther}
+                      placeholder={ui.placeholderOther}
                       className="w-full p-3 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                     />
                   )}
@@ -2246,7 +2248,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           <p className="text-xs text-center text-muted-foreground">
             {isForcedFinish
               ? locale === "uz"
-                ? "Respondent so‘rov shartlariga mos kelmaydi."
+                ? "Respondent so'rov shartlariga mos kelmaydi."
                 : "Респондент не подходит по условиям опроса."
               : ui.finishConfirmQuestion}
           </p>
