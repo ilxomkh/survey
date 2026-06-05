@@ -1060,14 +1060,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           if (Array.isArray(surveyData.blocks)) {
             rawBlocks = surveyData.blocks
             extractedQuestions = parseTallyBlocks(rawBlocks)
-            // ПРАВКА 1: дедупликация по id + по типу+заголовку
+            // Дедупликация: по id, по titleGroupId (один NPS блок = одна шкала), по типу+заголовку
             const seenIds = new Set<string>()
+            const seenTitleGroupIds = new Set<string>()
             const seenTitleKeys = new Set<string>()
             extractedQuestions = extractedQuestions.filter(q => {
               if (seenIds.has(q.id)) return false
+              if (q.type === "linear_scale" && q.titleGroupId && seenTitleGroupIds.has(q.titleGroupId)) return false
               const titleKey = `${q.type}::${normalizeSurveyText(q.title)}`
               if (q.title.trim().length > 0 && seenTitleKeys.has(titleKey)) return false
               seenIds.add(q.id)
+              if (q.titleGroupId) seenTitleGroupIds.add(q.titleGroupId)
               seenTitleKeys.add(titleKey)
               return true
             })
@@ -1615,19 +1618,21 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     answers[currentQuestion.id] !== null &&
     answers[currentQuestion.id] !== ""
 
-  const visibleForFollowUp = questionsResolved.filter((q) => {
-    if (logicResult.hiddenGroupUuids.has(q.id)) return false
-    if (q.type === "multi_text" && q.subFields) {
-      if (logicResult.hiddenGroupUuids.has(q.id)) return false
-      if (q.subFields.every((f) => logicResult.hiddenGroupUuids.has(f.id))) return false
+  // inlineFollowUp: для linear_scale ищем первый ВИДИМЫЙ text-вопрос после текущего
+  // NPS имеет несколько follow-up вопросов для разных диапазонов — нужен тот, что не скрыт логикой
+  const inlineFollowUp = useMemo(() => {
+    if (!scaleAnswered || currentQuestion?.type !== "linear_scale") return null
+    const curIdx = visibleQuestions.findIndex(q => q.id === currentQuestion.id)
+    if (curIdx < 0) return null
+    for (let i = curIdx + 1; i < visibleQuestions.length; i++) {
+      const q = visibleQuestions[i]!
+      if (q.type !== "text") break
+      const hiddenById = logicResult.hiddenGroupUuids.has(q.id)
+      const hiddenByTitle = q.titleGroupId ? logicResult.hiddenGroupUuids.has(q.titleGroupId) : false
+      if (!hiddenById && !hiddenByTitle) return q
     }
-    return true
-  })
-
-  const curIdxForFollowUp = visibleForFollowUp.findIndex(q => q.id === currentQuestion?.id)
-  const nextVisibleQ = curIdxForFollowUp >= 0 ? visibleForFollowUp[curIdxForFollowUp + 1] : undefined
-  const inlineFollowUp =
-    scaleAnswered && nextVisibleQ?.type === "text" ? nextVisibleQ : null
+    return null
+  }, [scaleAnswered, currentQuestion?.id, currentQuestion?.type, visibleQuestions, logicResult])
 
   useEffect(() => {
     if (!showFinishConfirm) return
@@ -1716,10 +1721,15 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       return
     }
 
-    const step = inlineFollowUp ? 2 : 1
+    let step = 1
+    if (inlineFollowUp) {
+      const followUpIdx = visibleQuestions.findIndex(q => q.id === inlineFollowUp.id)
+      const curIdxInVisible = visibleQuestions.findIndex(q => q.id === currentQuestion?.id)
+      if (followUpIdx > curIdxInVisible) step = followUpIdx - curIdxInVisible + 1
+    }
     if (currentQuestionIndex + step < visibleQuestions.length) {
       setCurrentQuestionIndex((prev) => prev + step)
-    } else if (inlineFollowUp) {
+    } else {
       setShowFinishConfirm(true)
     }
   }
