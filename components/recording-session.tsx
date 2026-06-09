@@ -884,8 +884,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
           const specifyInputBlock = allInputs.length > 0 ? (allInputs.find((b: any) => b.uuid !== otherInputBlock?.uuid) ?? allInputs[0]) : undefined;
 
-          const otherInputGroupId = otherOptionBlock && otherInputBlock ? (otherInputBlock.uuid || otherInputBlock.groupUuid) : undefined;
+          const otherInputGroupIdRaw = otherOptionBlock && otherInputBlock ? (otherInputBlock.uuid || otherInputBlock.groupUuid) : undefined;
           const specifyInputGroupId = specifyOptionBlock && specifyInputBlock ? (specifyInputBlock.uuid || specifyInputBlock.groupUuid) : undefined;
+          // Give "Другой" its own key even if no dedicated INPUT_TEXT sibling found
+          const otherInputGroupId = otherOptionBlock
+            ? (otherInputGroupIdRaw != null && otherInputGroupIdRaw !== specifyInputGroupId
+              ? otherInputGroupIdRaw
+              : (otherOptionBlock.uuid + "_other"))
+            : undefined;
 
           const lockSet = new Set<string>(checkboxLockUuids ?? [])
           if (otherOptionBlock) lockSet.add(otherOptionBlock.uuid)
@@ -945,8 +951,13 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
           const specifyInputBlock = allInputs.length > 0 ? (allInputs.find((b: any) => b.uuid !== otherInputBlock?.uuid) ?? allInputs[0]) : undefined;
 
-          const otherInputGroupId = otherOptionBlock && otherInputBlock ? (otherInputBlock.uuid || otherInputBlock.groupUuid) : undefined;
+          const otherInputGroupIdRawMC = otherOptionBlock && otherInputBlock ? (otherInputBlock.uuid || otherInputBlock.groupUuid) : undefined;
           const specifyInputGroupId = specifyOptionBlock && specifyInputBlock ? (specifyInputBlock.uuid || specifyInputBlock.groupUuid) : undefined;
+          const otherInputGroupId = otherOptionBlock
+            ? (otherInputGroupIdRawMC != null && otherInputGroupIdRawMC !== specifyInputGroupId
+              ? otherInputGroupIdRawMC
+              : (otherOptionBlock.uuid + "_other"))
+            : undefined;
 
           const mcLockSet = new Set<string>()
           if (otherOptionBlock) mcLockSet.add(otherOptionBlock.uuid)
