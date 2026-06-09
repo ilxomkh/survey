@@ -1966,6 +1966,24 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
             {currentQuestion.type === "checkbox" && currentQuestion.options && (() => {
               const opts = currentQuestion.options!
               console.log("[B1 DEBUG] type:", currentQuestion.type, "options:", currentQuestion.options?.length, "hidden:", [...logicResult.hiddenGroupUuids].length)
+              // Deep debug: show first option UUID and which SHOW_BLOCKS rules control it
+              if (opts.length > 0 && logicEngine) {
+                const firstOpt = opts[0]!
+                const isHiddenOpt = logicResult.hiddenGroupUuids.has(firstOpt.uuid)
+                console.log("[B1 OPT0] uuid:", firstOpt.uuid, "text:", firstOpt.text, "isHidden:", isHiddenOpt)
+                if (isHiddenOpt) {
+                  const rulesForOpt = logicEngine.rules.filter(r =>
+                    r.actions.some(a => a.type === "SHOW_BLOCKS" && (a as any).blocks?.includes(firstOpt.uuid))
+                  )
+                  console.log("[B1 OPT0] SHOW_BLOCKS rules count:", rulesForOpt.length)
+                  rulesForOpt.slice(0, 2).forEach((rule, i) => {
+                    rule.conditionals.forEach(c => {
+                      console.log(`  rule[${i}] field:${c.fieldGroupUuid} ${c.comparison} value:${c.value}`)
+                      console.log(`  rule[${i}] answers[field]:`, answers[c.fieldGroupUuid])
+                    })
+                  })
+                }
+              }
               const visibleOptions = (marketplaceQ2OptionOrder?.questionId === currentQuestion.id
                 ? marketplaceQ2OptionOrder.uuids
                   .map((uuid: string) => opts.find((o: QuestionOption) => o.uuid === uuid))
