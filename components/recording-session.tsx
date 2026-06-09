@@ -857,6 +857,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
             }))
             .filter((o) => o.text)
+          const containerBlock = siblingBlocks.find((b: any) => b.type === "CHECKBOXES")
+          console.log("[CHK PARSE]", questionText.slice(0, 40), "| container uuid:", containerBlock?.uuid, "groupUuid:", containerBlock?.groupUuid, "| opt[0] uuid:", optionBlocks[0]?.uuid, "groupUuid:", optionBlocks[0]?.groupUuid, "| title groupUuid:", titleBlock.groupUuid)
           const groupId = optionBlocks[0]?.groupUuid || titleBlock.groupUuid
           const lockRaw = optionBlocks[0]?.payload?.lockInPlace
           const checkboxLockUuids = Array.isArray(lockRaw)
