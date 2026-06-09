@@ -518,6 +518,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     // 1. Строго слушаемся логики Tally
     if (logicResult.hiddenGroupUuids.has(q.id)) return false
     if (q.titleGroupId && logicResult.hiddenGroupUuids.has(q.titleGroupId)) return false
+    if (q.fieldGroupUuid && logicResult.hiddenGroupUuids.has(q.fieldGroupUuid)) return false
     if (q.pageBreakGroupId && logicResult.hiddenGroupUuids.has(q.pageBreakGroupId)) return false
     if (q.pageBreakUuid && logicResult.hiddenGroupUuids.has(q.pageBreakUuid)) return false
 
@@ -1589,6 +1590,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     ) {
       const newVisible = questionsResolved.filter((q) => {
         if (newResult.hiddenGroupUuids.has(q.id)) return false
+        if (q.titleGroupId && newResult.hiddenGroupUuids.has(q.titleGroupId)) return false
+        if (q.fieldGroupUuid && newResult.hiddenGroupUuids.has(q.fieldGroupUuid)) return false
         if (q.type === "multi_text" && q.subFields) {
           if (q.subFields.every((f) => newResult.hiddenGroupUuids.has(f.id))) return false
         }
@@ -1650,7 +1653,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       if (q.type !== "text") break
       const hiddenById = logicResult.hiddenGroupUuids.has(q.id)
       const hiddenByTitle = q.titleGroupId ? logicResult.hiddenGroupUuids.has(q.titleGroupId) : false
-      if (!hiddenById && !hiddenByTitle) return q
+      const hiddenByField = q.fieldGroupUuid ? logicResult.hiddenGroupUuids.has(q.fieldGroupUuid) : false
+      if (!hiddenById && !hiddenByTitle && !hiddenByField) return q
     }
     return null
   }, [scaleAnswered, currentQuestion?.id, currentQuestion?.type, visibleQuestions, logicResult])
