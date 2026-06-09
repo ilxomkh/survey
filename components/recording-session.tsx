@@ -46,6 +46,7 @@ interface Question {
   checkboxLockUuids?: string[]
   subFields?: { id: string }[]
   titleGroupId?: string
+  fieldGroupUuid?: string
   specifyOptionUuid?: string
   specifyInputGroupId?: string
   pageBreakGroupId?: string
@@ -857,8 +858,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
               text: b.payload?.text || extractTextFromSchema(b.payload?.safeHTMLSchema) || b.text || "",
             }))
             .filter((o) => o.text)
-          const containerBlock = siblingBlocks.find((b: any) => b.type === "CHECKBOXES")
-          console.log("[CHK PARSE]", questionText.slice(0, 40), "| container uuid:", containerBlock?.uuid, "groupUuid:", containerBlock?.groupUuid, "| opt[0] uuid:", optionBlocks[0]?.uuid, "groupUuid:", optionBlocks[0]?.groupUuid, "| title groupUuid:", titleBlock.groupUuid)
           const groupId = optionBlocks[0]?.groupUuid || titleBlock.groupUuid
           const lockRaw = optionBlocks[0]?.payload?.lockInPlace
           const checkboxLockUuids = Array.isArray(lockRaw)
@@ -1032,6 +1031,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         return {
           id: groupId,
           titleGroupId: titleBlock.groupUuid,
+          fieldGroupUuid: textBlock?.groupUuid !== groupId ? textBlock?.groupUuid : undefined,
           pageBreakGroupId,
           title: bestQuestionText,
           rawSchema: bestRawSchema,
@@ -1153,14 +1153,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         setQuestions(extractedQuestions)
 
         if (rawBlocks.length > 0) {
-          const TARGET_HIDDEN = "7a09e3da-f0d6-468b-8559-bf7c72c78d22"
-          for (const b of rawBlocks) {
-            const s = JSON.stringify(b)
-            if (s.includes(TARGET_HIDDEN)) {
-              console.log("[HIDDEN BLOCK] type:", b.type, "uuid:", b.uuid, "groupUuid:", b.groupUuid, "payload:", s.slice(0, 600))
-              break
-            }
-          }
           const engine = buildLogicEngine(rawBlocks)
           setLogicEngine(engine)
           logicEngineRef.current = engine
@@ -1551,6 +1543,9 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     const answeredQ = questionsResolved.find(q => q.id === questionId)
     if (answeredQ?.titleGroupId && answeredQ.titleGroupId !== questionId) {
       newAnswers[answeredQ.titleGroupId] = value
+    }
+    if (answeredQ?.fieldGroupUuid && answeredQ.fieldGroupUuid !== questionId) {
+      newAnswers[answeredQ.fieldGroupUuid] = value
     }
     setAnswers(newAnswers)
 
@@ -1975,36 +1970,6 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
             {currentQuestion.type === "checkbox" && currentQuestion.options && (() => {
               const opts = currentQuestion.options!
-              console.log("[B1 DEBUG] type:", currentQuestion.type, "options:", currentQuestion.options?.length, "hidden:", [...logicResult.hiddenGroupUuids].length)
-              // Deep debug: show first option UUID and which SHOW_BLOCKS rules control it
-              if (opts.length > 0 && logicEngine) {
-                const firstOpt = opts[0]!
-                const isHiddenOpt = logicResult.hiddenGroupUuids.has(firstOpt.uuid)
-                console.log("[B1 OPT0] uuid:", firstOpt.uuid, "text:", firstOpt.text, "isHidden:", isHiddenOpt)
-                if (isHiddenOpt) {
-                  const rulesForOpt = logicEngine.rules.filter(r =>
-                    r.actions.some(a => a.type === "SHOW_BLOCKS" && (a as any).blocks?.includes(firstOpt.uuid))
-                  )
-                  console.log("[B1 OPT0] SHOW_BLOCKS rules count:", rulesForOpt.length)
-                  rulesForOpt.slice(0, 2).forEach((rule, i) => {
-                    rule.conditionals.forEach(c => {
-                      console.log(`  rule[${i}] field:${c.fieldGroupUuid} ${c.comparison} value:${c.value}`)
-                      console.log(`  rule[${i}] answers[field]:`, answers[c.fieldGroupUuid])
-                    })
-                  })
-                  const hideRulesForOpt = logicEngine.rules.filter(r =>
-                    r.actions.some(a => a.type === "HIDE_BLOCKS" && (a as any).blocks?.includes(firstOpt.uuid))
-                  )
-                  console.log("[B1 OPT0] HIDE_BLOCKS rules count:", hideRulesForOpt.length)
-                  console.log("[B1 OPT0] answers keys:", Object.keys(answers))
-                  hideRulesForOpt.slice(0, 3).forEach((rule, i) => {
-                    rule.conditionals.forEach(c => {
-                      console.log(`  hide[${i}] field:${c.fieldGroupUuid} ${c.comparison} value:${c.value}`)
-                      console.log(`  hide[${i}] answers[field]:`, answers[c.fieldGroupUuid])
-                    })
-                  })
-                }
-              }
               const visibleOptions = (marketplaceQ2OptionOrder?.questionId === currentQuestion.id
                 ? marketplaceQ2OptionOrder.uuids
                   .map((uuid: string) => opts.find((o: QuestionOption) => o.uuid === uuid))
