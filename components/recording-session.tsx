@@ -1153,13 +1153,15 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         setQuestions(extractedQuestions)
 
         if (rawBlocks.length > 0) {
+          const TARGET_HIDDEN = "7a09e3da-f0d6-468b-8559-bf7c72c78d22"
+          for (const b of rawBlocks) {
+            const s = JSON.stringify(b)
+            if (s.includes(TARGET_HIDDEN)) {
+              console.log("[HIDDEN BLOCK] type:", b.type, "uuid:", b.uuid, "groupUuid:", b.groupUuid, "payload:", s.slice(0, 600))
+              break
+            }
+          }
           const engine = buildLogicEngine(rawBlocks)
-          const A3_UUID = "5b9e1f72-7bcf-471e-8729-c35c9558e4f3"
-          const showA3 = engine.rules.filter(r => r.actions.some(a => a.type === "SHOW_BLOCKS" && (a as any).blocks?.includes(A3_UUID)))
-          const hideA3 = engine.rules.filter(r => r.actions.some(a => a.type === "HIDE_BLOCKS" && (a as any).blocks?.includes(A3_UUID)))
-          console.log("[A3 RULES] SHOW:", showA3.length, "HIDE:", hideA3.length)
-          showA3.slice(0, 5).forEach((r, i) => r.conditionals.forEach(c => console.log(`  A3 show[${i}] field:${c.fieldGroupUuid} ${c.comparison} ${c.value}`)))
-          hideA3.slice(0, 3).forEach((r, i) => r.conditionals.forEach(c => console.log(`  A3 hide[${i}] field:${c.fieldGroupUuid} ${c.comparison} ${c.value}`)))
           setLogicEngine(engine)
           logicEngineRef.current = engine
         }
