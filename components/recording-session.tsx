@@ -519,14 +519,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
     if (q.titleGroupId && logicResult.hiddenGroupUuids.has(q.titleGroupId)) return false
     if (q.pageBreakGroupId && logicResult.hiddenGroupUuids.has(q.pageBreakGroupId)) return false
     if (q.pageBreakUuid && logicResult.hiddenGroupUuids.has(q.pageBreakUuid)) return false
-    
+
     // 2. Скрываем инпуты, которые мы уже "втянули" внутрь других вопросов
     if (_otherInputIds.has(q.id) && q.type === 'text') return false
-    
+
     // 3. Защита от дублей: если это просто пустой заголовок инпута, скрываем
     const titleLow = q.title.toLowerCase();
     if (titleLow.startsWith("записать ответ") || titleLow === "respondent javobini yozing" || titleLow.startsWith("respondent javobini")) return false;
-    
+
     if (q.type === "multi_text" && q.subFields) {
       if (logicResult.hiddenGroupUuids.has(q.id)) return false
       if (q.subFields.every((f) => logicResult.hiddenGroupUuids.has(f.id))) return false
@@ -877,8 +877,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           })
 
           const otherInputBlock = allInputs.find((b: any) => {
-             const lbl = (b.payload?.text || b.text || "").toLowerCase();
-             return lbl.includes("записать") || lbl.includes("respondent") || lbl.includes("yozing") || lbl.includes("boshqa");
+            const lbl = (b.payload?.text || b.text || "").toLowerCase();
+            return lbl.includes("записать") || lbl.includes("respondent") || lbl.includes("yozing") || lbl.includes("boshqa");
           });
 
           const specifyInputBlock = allInputs.length > 0 ? (allInputs.find((b: any) => b.uuid !== otherInputBlock?.uuid) ?? allInputs[0]) : undefined;
@@ -938,8 +938,8 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           })
 
           const otherInputBlock = allInputs.find((b: any) => {
-             const lbl = (b.payload?.text || b.text || "").toLowerCase();
-             return lbl.includes("записать") || lbl.includes("respondent") || lbl.includes("yozing") || lbl.includes("boshqa");
+            const lbl = (b.payload?.text || b.text || "").toLowerCase();
+            return lbl.includes("записать") || lbl.includes("respondent") || lbl.includes("yozing") || lbl.includes("boshqa");
           });
 
           const specifyInputBlock = allInputs.length > 0 ? (allInputs.find((b: any) => b.uuid !== otherInputBlock?.uuid) ?? allInputs[0]) : undefined;
@@ -1096,45 +1096,45 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
         for (let i = 0; i < extractedQuestions.length; i++) {
           const q = extractedQuestions[i];
           if ((q.type === 'multiple_choice' || q.type === 'checkbox') && q.options) {
-             const otherOpt = q.options.find(o => {
-                 const t = o.text.toLowerCase().trim();
-                 return t === "boshqa" || t === "другой" || t === "other" || t.includes("другой [") || t.includes("boshqa [") || t.includes("other [");
-             });
-             if (otherOpt && !q.otherInputGroupId) {
-                 const nextQ = extractedQuestions.find((nq, idx) => idx > i && nq.type === 'text' && (
-                     nq.title.toLowerCase().includes("записать") || 
-                     nq.title.toLowerCase().includes("respondent") || 
-                     nq.title.toLowerCase().includes("yozing") || 
-                     nq.title.toLowerCase().includes("boshqa") ||
-                     nq.title.trim() === ""
-                 ));
-                 if (nextQ) {
-                     q.otherOptionUuid = otherOpt.uuid;
-                     q.otherInputGroupId = nextQ.id;
-                 }
-             }
+            const otherOpt = q.options.find(o => {
+              const t = o.text.toLowerCase().trim();
+              return t === "boshqa" || t === "другой" || t === "other" || t.includes("другой [") || t.includes("boshqa [") || t.includes("other [");
+            });
+            if (otherOpt && !q.otherInputGroupId) {
+              const nextQ = extractedQuestions.find((nq, idx) => idx > i && nq.type === 'text' && (
+                nq.title.toLowerCase().includes("записать") ||
+                nq.title.toLowerCase().includes("respondent") ||
+                nq.title.toLowerCase().includes("yozing") ||
+                nq.title.toLowerCase().includes("boshqa") ||
+                nq.title.trim() === ""
+              ));
+              if (nextQ) {
+                q.otherOptionUuid = otherOpt.uuid;
+                q.otherInputGroupId = nextQ.id;
+              }
+            }
 
-             const specifyOpt = q.options.find(o => {
-                 if (o.uuid === q.otherOptionUuid) return false;
-                 const t = o.text.toLowerCase();
-                 return t.includes("укажите") || t.includes("qaysi") || t.includes("specify") || t.includes("funksiya") || t.includes("функци");
-             });
-             if (specifyOpt && !q.specifyInputGroupId) {
-                 const nextQ = extractedQuestions.find((nq, idx) => idx > i && nq.type === 'text' && nq.id !== q.otherInputGroupId && (
-                     nq.title.toLowerCase().includes("укажите") || 
-                     nq.title.toLowerCase().includes("qaysi") || 
-                     nq.title.toLowerCase().includes("функци") || 
-                     nq.title.toLowerCase().includes("funksiya") ||
-                     nq.title.toLowerCase().includes("записать") || 
-                     nq.title.toLowerCase().includes("respondent") || 
-                     nq.title.toLowerCase().includes("yozing") ||
-                     nq.title.trim() === ""
-                 ));
-                 if (nextQ) {
-                     q.specifyOptionUuid = specifyOpt.uuid;
-                     q.specifyInputGroupId = nextQ.id;
-                 }
-             }
+            const specifyOpt = q.options.find(o => {
+              if (o.uuid === q.otherOptionUuid) return false;
+              const t = o.text.toLowerCase();
+              return t.includes("укажите") || t.includes("qaysi") || t.includes("specify") || t.includes("funksiya") || t.includes("функци");
+            });
+            if (specifyOpt && !q.specifyInputGroupId) {
+              const nextQ = extractedQuestions.find((nq, idx) => idx > i && nq.type === 'text' && nq.id !== q.otherInputGroupId && (
+                nq.title.toLowerCase().includes("укажите") ||
+                nq.title.toLowerCase().includes("qaysi") ||
+                nq.title.toLowerCase().includes("функци") ||
+                nq.title.toLowerCase().includes("funksiya") ||
+                nq.title.toLowerCase().includes("записать") ||
+                nq.title.toLowerCase().includes("respondent") ||
+                nq.title.toLowerCase().includes("yozing") ||
+                nq.title.trim() === ""
+              ));
+              if (nextQ) {
+                q.specifyOptionUuid = specifyOpt.uuid;
+                q.specifyInputGroupId = nextQ.id;
+              }
+            }
           }
         }
 
@@ -1472,32 +1472,32 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           let value = snapshotAnswers[q.id]
 
           if (q.type === "multiple_choice" && q.options) {
-              if (value === q.otherOptionUuid && q.otherInputGroupId) {
-                  const customText = String(snapshotAnswers[q.otherInputGroupId] ?? "").trim()
-                  value = customText ? `Другой: ${customText}` : (q.options.find((o) => o.uuid === value)?.text ?? value)
-              } else if (value === q.specifyOptionUuid && q.specifyInputGroupId) {
-                  const specText = String(snapshotAnswers[q.specifyInputGroupId] ?? "").trim()
-                  const optLabel = q.options.find((o) => o.uuid === value)?.text ?? "Укажите"
-                  value = specText ? `${optLabel}: ${specText}` : optLabel
-              } else {
-                  const found = q.options.find((o) => o.uuid === value)
-                  value = found?.text ?? value
-              }
+            if (value === q.otherOptionUuid && q.otherInputGroupId) {
+              const customText = String(snapshotAnswers[q.otherInputGroupId] ?? "").trim()
+              value = customText ? `Другой: ${customText}` : (q.options.find((o) => o.uuid === value)?.text ?? value)
+            } else if (value === q.specifyOptionUuid && q.specifyInputGroupId) {
+              const specText = String(snapshotAnswers[q.specifyInputGroupId] ?? "").trim()
+              const optLabel = q.options.find((o) => o.uuid === value)?.text ?? "Укажите"
+              value = specText ? `${optLabel}: ${specText}` : optLabel
+            } else {
+              const found = q.options.find((o) => o.uuid === value)
+              value = found?.text ?? value
+            }
           }
           if (q.type === "checkbox" && q.options && Array.isArray(value)) {
-              value = (value as string[]).map((uuid) => {
-                  if (uuid === q.otherOptionUuid && q.otherInputGroupId) {
-                      const customText = String(snapshotAnswers[q.otherInputGroupId] ?? "").trim()
-                      if (customText) return `Другой: ${customText}`
-                  }
-                  if (uuid === q.specifyOptionUuid && q.specifyInputGroupId) {
-                      const specText = String(snapshotAnswers[q.specifyInputGroupId] ?? "").trim()
-                      const optLabel = q.options?.find(o => o.uuid === uuid)?.text ?? "Укажите"
-                      if (specText) return `${optLabel}: ${specText}`
-                  }
-                  const found = q.options!.find((o) => o.uuid === uuid)
-                  return found?.text ?? uuid
-              })
+            value = (value as string[]).map((uuid) => {
+              if (uuid === q.otherOptionUuid && q.otherInputGroupId) {
+                const customText = String(snapshotAnswers[q.otherInputGroupId] ?? "").trim()
+                if (customText) return `Другой: ${customText}`
+              }
+              if (uuid === q.specifyOptionUuid && q.specifyInputGroupId) {
+                const specText = String(snapshotAnswers[q.specifyInputGroupId] ?? "").trim()
+                const optLabel = q.options?.find(o => o.uuid === uuid)?.text ?? "Укажите"
+                if (specText) return `${optLabel}: ${specText}`
+              }
+              const found = q.options!.find((o) => o.uuid === uuid)
+              return found?.text ?? uuid
+            })
           }
           if (q.type === "dropdown" && q.options) {
             const found = q.options.find((o) => o.uuid === value)
@@ -1708,7 +1708,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
       const isSpecifySelected = currentQuestion.type === "multiple_choice"
         ? answers[currentQuestion.id] === currentQuestion.specifyOptionUuid
         : Array.isArray(answers[currentQuestion.id]) && (answers[currentQuestion.id] as string[]).includes(currentQuestion.specifyOptionUuid)
-      
+
       if (isSpecifySelected) {
         const specifyText = answers[currentQuestion.specifyInputGroupId]
         if (!specifyText || String(specifyText).trim() === "") return false
@@ -1965,6 +1965,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
 
             {currentQuestion.type === "checkbox" && currentQuestion.options && (() => {
               const opts = currentQuestion.options!
+              console.log("[B1 DEBUG] type:", currentQuestion.type, "options:", currentQuestion.options?.length, "hidden:", [...logicResult.hiddenGroupUuids].length)
               const visibleOptions = (marketplaceQ2OptionOrder?.questionId === currentQuestion.id
                 ? marketplaceQ2OptionOrder.uuids
                   .map((uuid: string) => opts.find((o: QuestionOption) => o.uuid === uuid))
@@ -1972,7 +1973,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                 : opts.filter((option: QuestionOption) => !logicResult.hiddenGroupUuids.has(option.uuid))
               )
               const selected: string[] = Array.isArray(answers[currentQuestion.id]) ? answers[currentQuestion.id] : []
-              
+
               return (
                 <div className="space-y-4">
                   <div className="space-y-2">
