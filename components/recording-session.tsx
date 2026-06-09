@@ -1982,6 +1982,17 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
                       console.log(`  rule[${i}] answers[field]:`, answers[c.fieldGroupUuid])
                     })
                   })
+                  const hideRulesForOpt = logicEngine.rules.filter(r =>
+                    r.actions.some(a => a.type === "HIDE_BLOCKS" && (a as any).blocks?.includes(firstOpt.uuid))
+                  )
+                  console.log("[B1 OPT0] HIDE_BLOCKS rules count:", hideRulesForOpt.length)
+                  console.log("[B1 OPT0] answers keys:", Object.keys(answers))
+                  hideRulesForOpt.slice(0, 3).forEach((rule, i) => {
+                    rule.conditionals.forEach(c => {
+                      console.log(`  hide[${i}] field:${c.fieldGroupUuid} ${c.comparison} value:${c.value}`)
+                      console.log(`  hide[${i}] answers[field]:`, answers[c.fieldGroupUuid])
+                    })
+                  })
                 }
               }
               const visibleOptions = (marketplaceQ2OptionOrder?.questionId === currentQuestion.id
