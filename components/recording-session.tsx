@@ -1045,6 +1045,7 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           titleGroupId: titleBlock.groupUuid,
           fieldGroupUuid: textBlock?.groupUuid !== groupId ? textBlock?.groupUuid : undefined,
           pageBreakGroupId,
+          pageBreakUuid,
           title: bestQuestionText,
           rawSchema: bestRawSchema,
           type: "text",
@@ -1074,20 +1075,14 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
           if (Array.isArray(surveyData.blocks)) {
             rawBlocks = surveyData.blocks
             extractedQuestions = parseTallyBlocks(rawBlocks)
-            // Дедупликация: по id, по scaleMin+scaleMax (NPS-дубли в узбекском),
-            // по типу+заголовку для прочих дублей
+            // Дедупликация: по id, по типу+заголовку+странице для прочих дублей
+            // pageBreakUuid отличает одинаковые вопросы на разных страницах (разные бренды)
             const seenIds = new Set<string>()
             const seenTitleKeys = new Set<string>()
-            const seenScaleKeys = new Set<string>()
             extractedQuestions = extractedQuestions.filter(q => {
               if (seenIds.has(q.id)) return false
-              // linear_scale с теми же min/max — дубль NPS (узб. Tally делает TITLE на каждый диапазон)
-              if (q.type === "linear_scale") {
-                const scaleKey = `scale::${q.scaleMin ?? 0}::${q.scaleMax ?? 10}`
-                if (seenScaleKeys.has(scaleKey)) return false
-                seenScaleKeys.add(scaleKey)
-              }
-              const titleKey = `${q.type}::${normalizeSurveyText(q.title)}`
+              const pageKey = q.pageBreakUuid ?? q.pageBreakGroupId ?? ""
+              const titleKey = `${q.type}::${normalizeSurveyText(q.title)}::${pageKey}`
               if (q.title.trim().length > 0 && seenTitleKeys.has(titleKey)) return false
               seenIds.add(q.id)
               seenTitleKeys.add(titleKey)
