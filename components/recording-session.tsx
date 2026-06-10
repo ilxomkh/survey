@@ -539,33 +539,15 @@ export function RecordingSession({ sessionId, survey, onComplete }: RecordingSes
   visibleQuestionsRef.current = visibleQuestions
 
   const extractTextFromSchema = (schema: any): string => {
-    if (!schema) return ""
-    if (typeof schema === "string") return schema
-    if (!Array.isArray(schema)) return ""
-
-    return schema
-      .map((item: any): string => {
-        if (typeof item === "string") return isTallyStyleMarker(item) ? "" : item
-        if (!Array.isArray(item)) return ""
-
-        const first = item[0]
-        if (typeof first === "string") return isTallyStyleMarker(first) ? "" : first
-
-        if (Array.isArray(first)) {
-          return first
-            .map((fragment: any) => {
-              if (typeof fragment === "string") return isTallyStyleMarker(fragment) ? "" : fragment
-              if (Array.isArray(fragment) && typeof fragment[0] === "string")
-                return isTallyStyleMarker(fragment[0]) ? "" : fragment[0]
-              return ""
-            })
-            .join("")
-        }
-        return ""
-      })
-      .filter(Boolean)
-      .join("")
-      .trim()
+    const extract = (s: any): string => {
+      if (!s) return ""
+      if (typeof s === "string") return isTallyStyleMarker(s) ? "" : s
+      if (!Array.isArray(s) || s.length === 0) return ""
+      const first = s[0]
+      if (typeof first === "string") return isTallyStyleMarker(first) ? "" : first
+      return s.map(extract).filter(Boolean).join("")
+    }
+    return extract(schema).trim()
   }
 
   const renderSchema = (schema: any, atMention?: string | null): React.ReactNode => {
